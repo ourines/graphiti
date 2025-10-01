@@ -17,6 +17,11 @@ cp .env.example .env
 
 Edit `.env`:
 ```bash
+# IMPORTANT: Keep NEO4J_URI as 'neo4j' (Docker service name), not 'localhost'
+NEO4J_URI=bolt://neo4j:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=demodemo
+
 # Add your Gemini API key
 GOOGLE_API_KEY=your_api_key_here
 MODEL_NAME=gemini-2.5-flash
@@ -48,10 +53,10 @@ docker-compose up -d
 
 ```bash
 # Check health (no auth required)
-curl http://localhost/health
+curl http://localhost:5150/health
 
-# Test authenticated endpoint
-curl -u admin:your_password http://localhost/sse
+# Test authenticated endpoint (should timeout - SSE is a streaming connection)
+curl -u admin:your_password http://localhost:5150/sse
 ```
 
 ### 5. Configure MCP Client
@@ -72,7 +77,7 @@ Add to your MCP client (e.g., Claude Desktop):
         "-y",
         "supergateway",
         "--sse",
-        "http://localhost/sse",
+        "http://localhost:5150/sse",
         "--header",
         "Authorization: Basic YWRtaW46eW91cl9wYXNzd29yZA=="
       ]
@@ -80,6 +85,8 @@ Add to your MCP client (e.g., Claude Desktop):
   }
 }
 ```
+
+**Note**: Port 5150 is used for local deployment. Change to 80 or your custom port in production.
 
 ## Backup Database
 

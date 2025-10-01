@@ -28,7 +28,14 @@ Copy and configure environment variables:
 cp .env.example .env
 ```
 
-Edit `.env` and configure your chosen LLM provider:
+Edit `.env` and configure:
+
+**⚠️ CRITICAL: Docker Networking**
+- Use `NEO4J_URI=bolt://neo4j:7687` for Docker Compose (service name)
+- Use `NEO4J_URI=bolt://localhost:7687` only if Neo4j runs on host machine
+- Using `localhost` in Docker containers will fail!
+
+**LLM Provider** - Choose one:
 
 #### Option A: Google Gemini (Recommended)
 ```bash

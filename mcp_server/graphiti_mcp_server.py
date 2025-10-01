@@ -27,6 +27,15 @@ from graphiti_core.llm_client import LLMClient
 from graphiti_core.llm_client.azure_openai_client import AzureOpenAILLMClient
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.llm_client.openai_client import OpenAIClient
+
+# Conditional Gemini imports
+try:
+    from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
+    from graphiti_core.llm_client.gemini_client import GeminiClient
+
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
 from graphiti_core.nodes import EpisodeType, EpisodicNode
 from graphiti_core.search.search_config_recipes import (
     NODE_HYBRID_SEARCH_NODE_DISTANCE,
@@ -37,6 +46,11 @@ from graphiti_core.utils.maintenance.graph_data_operations import clear_data
 
 load_dotenv()
 
+# Log Gemini availability after logger is configured
+if not GEMINI_AVAILABLE:
+    import logging
+
+    logging.info('Gemini support not available. Install with: pip install graphiti-core[google-genai]')
 
 DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
 SMALL_LLM_MODEL = 'gpt-4.1-nano'
@@ -200,6 +214,7 @@ class GraphitiLLMConfig(BaseModel):
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
     azure_openai_use_managed_identity: bool = False
+    google_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> 'GraphitiLLMConfig':
@@ -212,6 +227,7 @@ class GraphitiLLMConfig(BaseModel):
         small_model_env = os.environ.get('SMALL_MODEL_NAME', '')
         small_model = small_model_env if small_model_env.strip() else SMALL_LLM_MODEL
 
+        google_api_key = os.environ.get('GOOGLE_API_KEY', None)
         azure_openai_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT', None)
         azure_openai_api_version = os.environ.get('AZURE_OPENAI_API_VERSION', None)
         azure_openai_deployment_name = os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME', None)
@@ -233,6 +249,7 @@ class GraphitiLLMConfig(BaseModel):
 
             return cls(
                 api_key=os.environ.get('OPENAI_API_KEY'),
+                google_api_key=google_api_key,
                 model=model,
                 small_model=small_model,
                 temperature=float(os.environ.get('LLM_TEMPERATURE', '0.0')),
@@ -255,6 +272,7 @@ class GraphitiLLMConfig(BaseModel):
                 azure_openai_use_managed_identity=azure_openai_use_managed_identity,
                 azure_openai_endpoint=azure_openai_endpoint,
                 api_key=api_key,
+                google_api_key=google_api_key,
                 azure_openai_api_version=azure_openai_api_version,
                 azure_openai_deployment_name=azure_openai_deployment_name,
                 model=model,
@@ -295,6 +313,7 @@ class GraphitiLLMConfig(BaseModel):
             LLMClient instance
         """
 
+        # Priority: Azure OpenAI > Google Gemini > OpenAI
         if self.azure_openai_endpoint is not None:
             # Azure OpenAI API setup
             if self.azure_openai_use_managed_identity:
@@ -333,8 +352,20 @@ class GraphitiLLMConfig(BaseModel):
             else:
                 raise ValueError('OPENAI_API_KEY must be set when using Azure OpenAI API')
 
+        # Check for Google Gemini
+        if self.google_api_key and GEMINI_AVAILABLE:
+            llm_client_config = LLMConfig(
+                api_key=self.google_api_key, model=self.model, small_model=self.small_model
+            )
+            llm_client_config.temperature = self.temperature
+            return GeminiClient(config=llm_client_config)
+
+        # Fall back to OpenAI
         if not self.api_key:
-            raise ValueError('OPENAI_API_KEY must be set when using OpenAI API')
+            raise ValueError(
+                'Either OPENAI_API_KEY or GOOGLE_API_KEY must be set. '
+                'For Gemini support, install: pip install graphiti-core[google-genai]'
+            )
 
         llm_client_config = LLMConfig(
             api_key=self.api_key, model=self.model, small_model=self.small_model
@@ -354,6 +385,7 @@ class GraphitiEmbedderConfig(BaseModel):
 
     model: str = DEFAULT_EMBEDDER_MODEL
     api_key: str | None = None
+    google_api_key: str | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -367,6 +399,7 @@ class GraphitiEmbedderConfig(BaseModel):
         model_env = os.environ.get('EMBEDDER_MODEL_NAME', '')
         model = model_env if model_env.strip() else DEFAULT_EMBEDDER_MODEL
 
+        google_api_key = os.environ.get('GOOGLE_API_KEY', None)
         azure_openai_endpoint = os.environ.get('AZURE_OPENAI_EMBEDDING_ENDPOINT', None)
         azure_openai_api_version = os.environ.get('AZURE_OPENAI_EMBEDDING_API_VERSION', None)
         azure_openai_deployment_name = os.environ.get(
@@ -401,6 +434,7 @@ class GraphitiEmbedderConfig(BaseModel):
                 azure_openai_use_managed_identity=azure_openai_use_managed_identity,
                 azure_openai_endpoint=azure_openai_endpoint,
                 api_key=api_key,
+                google_api_key=google_api_key,
                 azure_openai_api_version=azure_openai_api_version,
                 azure_openai_deployment_name=azure_openai_deployment_name,
             )
@@ -408,9 +442,11 @@ class GraphitiEmbedderConfig(BaseModel):
             return cls(
                 model=model,
                 api_key=os.environ.get('OPENAI_API_KEY'),
+                google_api_key=google_api_key,
             )
 
     def create_client(self) -> EmbedderClient | None:
+        # Priority: Azure OpenAI > Google Gemini > OpenAI
         if self.azure_openai_endpoint is not None:
             # Azure OpenAI API setup
             if self.azure_openai_use_managed_identity:
@@ -439,14 +475,21 @@ class GraphitiEmbedderConfig(BaseModel):
             else:
                 logger.error('OPENAI_API_KEY must be set when using Azure OpenAI API')
                 return None
-        else:
-            # OpenAI API setup
-            if not self.api_key:
-                return None
 
-            embedder_config = OpenAIEmbedderConfig(api_key=self.api_key, embedding_model=self.model)
+        # Check for Google Gemini
+        if self.google_api_key and GEMINI_AVAILABLE:
+            embedder_config = GeminiEmbedderConfig(
+                api_key=self.google_api_key, embedding_model=self.model
+            )
+            return GeminiEmbedder(config=embedder_config)
 
-            return OpenAIEmbedder(config=embedder_config)
+        # Fall back to OpenAI API
+        if not self.api_key:
+            return None
+
+        embedder_config = OpenAIEmbedderConfig(api_key=self.api_key, embedding_model=self.model)
+
+        return OpenAIEmbedder(config=embedder_config)
 
 
 class Neo4jConfig(BaseModel):

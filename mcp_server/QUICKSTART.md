@@ -76,10 +76,8 @@ Add to your MCP client (e.g., Claude Desktop):
       "args": [
         "-y",
         "supergateway",
-        "--sse",
-        "http://localhost:5150/sse",
-        "--header",
-        "Authorization: Basic YWRtaW46eW91cl9wYXNzd29yZA=="
+        "--sse=http://localhost:5150/sse",
+        "--header=Authorization: Basic YWRtaW46eW91cl9wYXNzd29yZA=="
       ]
     }
   }

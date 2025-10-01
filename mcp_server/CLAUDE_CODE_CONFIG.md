@@ -32,6 +32,8 @@ Add this configuration to your Claude Code MCP settings:
 }
 ```
 
+**IMPORTANT**: The header value must be a single array element. Do NOT split it into multiple elements.
+
 ### Generate Base64 Credentials
 
 ```bash
@@ -45,6 +47,7 @@ Example output: `YWRtaW46eW91cl9wYXNzd29yZA==`
 
 If your username is `admin` and password is `admin123`:
 
+**Working Example:**
 ```json
 {
   "mcpServers": {
@@ -57,6 +60,23 @@ If your username is `admin` and password is `admin123`:
         "http://localhost:5150/sse",
         "--header",
         "Authorization: Basic YWRtaW46YWRtaW4xMjM="
+      ]
+    }
+  }
+}
+```
+
+**Alternative format (may work better in some MCP clients):**
+```json
+{
+  "mcpServers": {
+    "graphiti": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "supergateway",
+        "--sse=http://localhost:5150/sse",
+        "--header=Authorization: Basic YWRtaW46YWRtaW4xMjM="
       ]
     }
   }

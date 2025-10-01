@@ -88,6 +88,8 @@ Add to your MCP client (e.g., Claude Desktop):
 
 **Note**: Port 5150 is used for local deployment. Change to 80 or your custom port in production.
 
+**For Claude Code users**: See [CLAUDE_CODE_CONFIG.md](CLAUDE_CODE_CONFIG.md) for detailed setup instructions.
+
 ## Backup Database
 
 ```bash

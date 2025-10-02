@@ -1,11 +1,10 @@
-# Lightweight backup service for Neo4j data
+# Simple backup service for Neo4j
 FROM alpine:3.19
 
 # Install required tools
 RUN apk add --no-cache \
     bash \
-    tar \
-    gzip \
+    docker-cli \
     aws-cli \
     tzdata
 
@@ -13,17 +12,16 @@ RUN apk add --no-cache \
 ENV TZ=UTC
 
 # Copy backup script
-COPY scripts/backup-data.sh /usr/local/bin/backup-data.sh
-RUN chmod +x /usr/local/bin/backup-data.sh
+COPY scripts/backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
 
 # Create crontab entry (default: daily at 2 AM UTC)
-# Can be overridden via BACKUP_CRON env variable
-RUN echo "0 2 * * * /usr/local/bin/backup-data.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
+RUN echo "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
 
 # Create log directory
 RUN mkdir -p /var/log && touch /var/log/backup.log
 
-# Entrypoint script to handle custom cron schedule
+# Entrypoint script
 COPY scripts/backup-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

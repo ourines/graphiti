@@ -83,22 +83,33 @@ aws s3 cp "$TEMP_DIR/$BACKUP_NAME" "s3://$S3_BUCKET/$S3_PATH/$BACKUP_NAME" $AWS_
 if [ $? -eq 0 ]; then
     log_info "✓ Backup uploaded successfully"
 
-    # Cleanup old backups
-    log_info "Cleaning up backups older than $RETENTION_DAYS days..."
+    # Cleanup old backups using Python for date calculation
+    if [ "$RETENTION_DAYS" -gt 0 ]; then
+        log_info "Cleaning up backups older than $RETENTION_DAYS days..."
 
-    # Calculate cutoff date (Alpine/BusyBox date doesn't support -d or -v)
-    CUTOFF_TIMESTAMP=$(( $(date +%s) - (RETENTION_DAYS * 86400) ))
-    CUTOFF_DATE=$(date -d @${CUTOFF_TIMESTAMP} +%Y%m%d 2>/dev/null || date -r ${CUTOFF_TIMESTAMP} +%Y%m%d 2>/dev/null || echo "00000000")
+        # Calculate cutoff date using Python
+        CUTOFF_DATE=$(python3 -c "
+from datetime import datetime, timedelta
+cutoff = datetime.now() - timedelta(days=$RETENTION_DAYS)
+print(cutoff.strftime('%Y%m%d'))
+")
 
-    aws s3 ls "s3://$S3_BUCKET/$S3_PATH/" $AWS_ARGS | grep "neo4j_backup_" | while read -r line; do
-        BACKUP_FILE=$(echo $line | awk '{print $4}')
-        BACKUP_DATE=$(echo $BACKUP_FILE | grep -o '[0-9]\{8\}' | head -1)
+        log_info "Cutoff date: $CUTOFF_DATE (backups before this will be deleted)"
 
-        if [ -n "$BACKUP_DATE" ] && [ "$BACKUP_DATE" -lt "$CUTOFF_DATE" ]; then
-            log_info "Deleting old backup: $BACKUP_FILE"
-            aws s3 rm "s3://$S3_BUCKET/$S3_PATH/$BACKUP_FILE" $AWS_ARGS
-        fi
-    done
+        # List and delete old backups based on filename date
+        aws s3 ls "s3://$S3_BUCKET/$S3_PATH/" $AWS_ARGS | grep "neo4j_backup_" | while read -r line; do
+            BACKUP_FILE=$(echo "$line" | awk '{print $4}')
+            # Extract date from filename (format: neo4j_backup_YYYYMMDD_HHMMSS.tar.gz)
+            BACKUP_DATE=$(echo "$BACKUP_FILE" | grep -o '[0-9]\{8\}' | head -1)
+
+            if [ -n "$BACKUP_DATE" ] && [ "$BACKUP_DATE" -lt "$CUTOFF_DATE" ]; then
+                log_info "Deleting old backup: $BACKUP_FILE (date: $BACKUP_DATE)"
+                aws s3 rm "s3://$S3_BUCKET/$S3_PATH/$BACKUP_FILE" $AWS_ARGS
+            fi
+        done
+
+        log_info "Cleanup completed"
+    fi
 
     log_info "Backup completed successfully"
 else

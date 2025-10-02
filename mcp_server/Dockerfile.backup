@@ -7,7 +7,6 @@ RUN apk add --no-cache \
     tar \
     gzip \
     aws-cli \
-    dcron \
     tzdata
 
 # Set timezone

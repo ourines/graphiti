@@ -32,7 +32,7 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies first (better layer caching)
 # Install with google-genai support for Gemini
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra google-genai
+    uv sync --no-dev --extra google-genai
 
 # Copy application code
 COPY graphiti_mcp_server.py ./

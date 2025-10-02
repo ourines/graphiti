@@ -19,6 +19,7 @@ from openai import AsyncAzureOpenAI
 from pydantic import BaseModel, Field
 
 from graphiti_core import Graphiti
+from graphiti_core.cross_encoder.bge_reranker_client import BGERerankerClient
 from graphiti_core.edges import EntityEdge
 from graphiti_core.embedder.azure_openai import AzureOpenAIEmbedderClient
 from graphiti_core.embedder.client import EmbedderClient
@@ -632,6 +633,9 @@ async def initialize_graphiti():
 
         embedder_client = config.embedder.create_client()
 
+        # Use BGE reranker when using Gemini to avoid needing OPENAI_API_KEY
+        cross_encoder = BGERerankerClient() if config.llm.google_api_key else None
+
         # Initialize Graphiti client
         graphiti_client = Graphiti(
             uri=config.neo4j.uri,
@@ -639,6 +643,7 @@ async def initialize_graphiti():
             password=config.neo4j.password,
             llm_client=llm_client,
             embedder=embedder_client,
+            cross_encoder=cross_encoder,
             max_coroutines=SEMAPHORE_LIMIT,
         )
 

@@ -51,7 +51,9 @@ load_dotenv()
 if not GEMINI_AVAILABLE:
     import logging
 
-    logging.info('Gemini support not available. Install with: pip install graphiti-core[google-genai]')
+    logging.info(
+        'Gemini support not available. Install with: pip install graphiti-core[google-genai]'
+    )
 
 DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
 SMALL_LLM_MODEL = 'gpt-4.1-nano'
@@ -211,6 +213,7 @@ class GraphitiLLMConfig(BaseModel):
     model: str = DEFAULT_LLM_MODEL
     small_model: str = SMALL_LLM_MODEL
     temperature: float = 0.0
+    max_tokens: int | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -248,12 +251,17 @@ class GraphitiLLMConfig(BaseModel):
                     f'Empty MODEL_NAME environment variable, using default: {DEFAULT_LLM_MODEL}'
                 )
 
+            # Get max_tokens from environment, None means use model default
+            max_tokens_env = os.environ.get('MAX_TOKENS', '')
+            max_tokens = int(max_tokens_env) if max_tokens_env.strip() else None
+
             return cls(
                 api_key=os.environ.get('OPENAI_API_KEY'),
                 google_api_key=google_api_key,
                 model=model,
                 small_model=small_model,
                 temperature=float(os.environ.get('LLM_TEMPERATURE', '0.0')),
+                max_tokens=max_tokens,
             )
         else:
             # Setup for Azure OpenAI API
@@ -269,6 +277,10 @@ class GraphitiLLMConfig(BaseModel):
                 # Managed identity
                 api_key = None
 
+            # Get max_tokens from environment, None means use model default
+            max_tokens_env = os.environ.get('MAX_TOKENS', '')
+            max_tokens = int(max_tokens_env) if max_tokens_env.strip() else None
+
             return cls(
                 azure_openai_use_managed_identity=azure_openai_use_managed_identity,
                 azure_openai_endpoint=azure_openai_endpoint,
@@ -279,6 +291,7 @@ class GraphitiLLMConfig(BaseModel):
                 model=model,
                 small_model=small_model,
                 temperature=float(os.environ.get('LLM_TEMPERATURE', '0.0')),
+                max_tokens=max_tokens,
             )
 
     @classmethod
@@ -320,6 +333,15 @@ class GraphitiLLMConfig(BaseModel):
             if self.azure_openai_use_managed_identity:
                 # Use managed identity for authentication
                 token_provider = create_azure_credential_token_provider()
+                config_kwargs = {
+                    'api_key': self.api_key,
+                    'model': self.model,
+                    'small_model': self.small_model,
+                    'temperature': self.temperature,
+                }
+                if self.max_tokens is not None:
+                    config_kwargs['max_tokens'] = self.max_tokens
+
                 return AzureOpenAILLMClient(
                     azure_client=AsyncAzureOpenAI(
                         azure_endpoint=self.azure_openai_endpoint,
@@ -327,15 +349,19 @@ class GraphitiLLMConfig(BaseModel):
                         api_version=self.azure_openai_api_version,
                         azure_ad_token_provider=token_provider,
                     ),
-                    config=LLMConfig(
-                        api_key=self.api_key,
-                        model=self.model,
-                        small_model=self.small_model,
-                        temperature=self.temperature,
-                    ),
+                    config=LLMConfig(**config_kwargs),
                 )
             elif self.api_key:
                 # Use API key for authentication
+                config_kwargs = {
+                    'api_key': self.api_key,
+                    'model': self.model,
+                    'small_model': self.small_model,
+                    'temperature': self.temperature,
+                }
+                if self.max_tokens is not None:
+                    config_kwargs['max_tokens'] = self.max_tokens
+
                 return AzureOpenAILLMClient(
                     azure_client=AsyncAzureOpenAI(
                         azure_endpoint=self.azure_openai_endpoint,
@@ -343,23 +369,23 @@ class GraphitiLLMConfig(BaseModel):
                         api_version=self.azure_openai_api_version,
                         api_key=self.api_key,
                     ),
-                    config=LLMConfig(
-                        api_key=self.api_key,
-                        model=self.model,
-                        small_model=self.small_model,
-                        temperature=self.temperature,
-                    ),
+                    config=LLMConfig(**config_kwargs),
                 )
             else:
                 raise ValueError('OPENAI_API_KEY must be set when using Azure OpenAI API')
 
         # Check for Google Gemini
         if self.google_api_key and GEMINI_AVAILABLE:
-            llm_client_config = LLMConfig(
-                api_key=self.google_api_key, model=self.model, small_model=self.small_model
-            )
-            llm_client_config.temperature = self.temperature
-            return GeminiClient(config=llm_client_config)
+            config_kwargs = {
+                'api_key': self.google_api_key,
+                'model': self.model,
+                'small_model': self.small_model,
+                'temperature': self.temperature,
+            }
+            if self.max_tokens is not None:
+                config_kwargs['max_tokens'] = self.max_tokens
+
+            return GeminiClient(config=LLMConfig(**config_kwargs))
 
         # Fall back to OpenAI
         if not self.api_key:
@@ -368,14 +394,16 @@ class GraphitiLLMConfig(BaseModel):
                 'For Gemini support, install: pip install graphiti-core[google-genai]'
             )
 
-        llm_client_config = LLMConfig(
-            api_key=self.api_key, model=self.model, small_model=self.small_model
-        )
+        config_kwargs = {
+            'api_key': self.api_key,
+            'model': self.model,
+            'small_model': self.small_model,
+            'temperature': self.temperature,
+        }
+        if self.max_tokens is not None:
+            config_kwargs['max_tokens'] = self.max_tokens
 
-        # Set temperature
-        llm_client_config.temperature = self.temperature
-
-        return OpenAIClient(config=llm_client_config)
+        return OpenAIClient(config=LLMConfig(**config_kwargs))
 
 
 class GraphitiEmbedderConfig(BaseModel):
@@ -615,63 +643,87 @@ mcp = FastMCP(
 # Initialize Graphiti client
 graphiti_client: Graphiti | None = None
 
+# Server initialization state
+# This flag is set to True only after initialize_graphiti() completes successfully
+# Tools should check this flag to ensure the server is fully ready before processing requests
+server_ready: bool = False
+initialization_lock = asyncio.Lock()
+
 
 async def initialize_graphiti():
     """Initialize the Graphiti client with the configured settings."""
-    global graphiti_client, config
+    global graphiti_client, config, server_ready
 
-    try:
-        # Create LLM client if possible
-        llm_client = config.llm.create_client()
-        if not llm_client and config.use_custom_entities:
-            # If custom entities are enabled, we must have an LLM client
-            raise ValueError('OPENAI_API_KEY must be set when custom entities are enabled')
+    async with initialization_lock:
+        if server_ready:
+            logger.info('Graphiti already initialized, skipping')
+            return
 
-        # Validate Neo4j configuration
-        if not config.neo4j.uri or not config.neo4j.user or not config.neo4j.password:
-            raise ValueError('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set')
+        try:
+            logger.info('Starting Graphiti initialization...')
 
-        embedder_client = config.embedder.create_client()
+            # Create LLM client if possible
+            logger.info('Creating LLM client...')
+            llm_client = config.llm.create_client()
+            if not llm_client and config.use_custom_entities:
+                # If custom entities are enabled, we must have an LLM client
+                raise ValueError('OPENAI_API_KEY must be set when custom entities are enabled')
 
-        # Use BGE reranker when using Gemini to avoid needing OPENAI_API_KEY
-        cross_encoder = BGERerankerClient() if config.llm.google_api_key else None
+            # Validate Neo4j configuration
+            logger.info('Validating Neo4j configuration...')
+            if not config.neo4j.uri or not config.neo4j.user or not config.neo4j.password:
+                raise ValueError('NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD must be set')
 
-        # Initialize Graphiti client
-        graphiti_client = Graphiti(
-            uri=config.neo4j.uri,
-            user=config.neo4j.user,
-            password=config.neo4j.password,
-            llm_client=llm_client,
-            embedder=embedder_client,
-            cross_encoder=cross_encoder,
-            max_coroutines=SEMAPHORE_LIMIT,
-        )
+            logger.info('Creating embedder client...')
+            embedder_client = config.embedder.create_client()
 
-        # Destroy graph if requested
-        if config.destroy_graph:
-            logger.info('Destroying graph...')
-            await clear_data(graphiti_client.driver)
+            # Use BGE reranker when using Gemini to avoid needing OPENAI_API_KEY
+            cross_encoder = BGERerankerClient() if config.llm.google_api_key else None
 
-        # Initialize the graph database with Graphiti's indices
-        await graphiti_client.build_indices_and_constraints()
-        logger.info('Graphiti client initialized successfully')
+            # Initialize Graphiti client
+            logger.info('Initializing Graphiti client...')
+            graphiti_client = Graphiti(
+                uri=config.neo4j.uri,
+                user=config.neo4j.user,
+                password=config.neo4j.password,
+                llm_client=llm_client,
+                embedder=embedder_client,
+                cross_encoder=cross_encoder,
+                max_coroutines=SEMAPHORE_LIMIT,
+            )
 
-        # Log configuration details for transparency
-        if llm_client:
-            logger.info(f'Using OpenAI model: {config.llm.model}')
-            logger.info(f'Using temperature: {config.llm.temperature}')
-        else:
-            logger.info('No LLM client configured - entity extraction will be limited')
+            # Destroy graph if requested
+            if config.destroy_graph:
+                logger.info('Destroying graph...')
+                await clear_data(graphiti_client.driver)
 
-        logger.info(f'Using group_id: {config.group_id}')
-        logger.info(
-            f'Custom entity extraction: {"enabled" if config.use_custom_entities else "disabled"}'
-        )
-        logger.info(f'Using concurrency limit: {SEMAPHORE_LIMIT}')
+            # Initialize the graph database with Graphiti's indices
+            logger.info('Building indices and constraints...')
+            await graphiti_client.build_indices_and_constraints()
 
-    except Exception as e:
-        logger.error(f'Failed to initialize Graphiti: {str(e)}')
-        raise
+            # Log configuration details for transparency
+            if llm_client:
+                logger.info(f'Using OpenAI model: {config.llm.model}')
+                logger.info(f'Using temperature: {config.llm.temperature}')
+            else:
+                logger.info('No LLM client configured - entity extraction will be limited')
+
+            logger.info(f'Using group_id: {config.group_id}')
+            logger.info(
+                f'Custom entity extraction: {"enabled" if config.use_custom_entities else "disabled"}'
+            )
+            logger.info(f'Using concurrency limit: {SEMAPHORE_LIMIT}')
+
+            # Mark server as ready
+            server_ready = True
+            logger.info(
+                '✓ Graphiti initialization completed successfully - server is ready to accept requests'
+            )
+
+        except Exception as e:
+            logger.error(f'Failed to initialize Graphiti: {str(e)}')
+            server_ready = False
+            raise
 
 
 def format_fact_result(edge: EntityEdge) -> dict[str, Any]:
@@ -802,6 +854,9 @@ async def add_memory(
     """
     global graphiti_client, episode_queues, queue_workers
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -896,6 +951,9 @@ async def search_memory_nodes(
     """
     global graphiti_client
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -972,6 +1030,9 @@ async def search_memory_facts(
     """
     global graphiti_client
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -1018,6 +1079,9 @@ async def delete_entity_edge(uuid: str) -> SuccessResponse | ErrorResponse:
     """
     global graphiti_client
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -1048,6 +1112,9 @@ async def delete_episode(uuid: str) -> SuccessResponse | ErrorResponse:
     """
     global graphiti_client
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -1077,6 +1144,9 @@ async def get_entity_edge(uuid: str) -> dict[str, Any] | ErrorResponse:
         uuid: UUID of the entity edge to retrieve
     """
     global graphiti_client
+
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
 
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
@@ -1111,6 +1181,9 @@ async def get_episodes(
         last_n: Number of most recent episodes to retrieve (default: 10)
     """
     global graphiti_client
+
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
 
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
@@ -1157,6 +1230,9 @@ async def clear_graph() -> SuccessResponse | ErrorResponse:
     """Clear all data from the graph memory and rebuild indices."""
     global graphiti_client
 
+    if not server_ready:
+        return ErrorResponse(error='Server is still initializing, please wait and try again')
+
     if graphiti_client is None:
         return ErrorResponse(error='Graphiti client not initialized')
 
@@ -1181,6 +1257,12 @@ async def clear_graph() -> SuccessResponse | ErrorResponse:
 async def get_status() -> StatusResponse:
     """Get the status of the Graphiti MCP server and Neo4j connection."""
     global graphiti_client
+
+    # Check if server initialization is complete
+    if not server_ready:
+        return StatusResponse(
+            status='initializing', message='Graphiti MCP server is initializing, please wait...'
+        )
 
     if graphiti_client is None:
         return StatusResponse(status='error', message='Graphiti client not initialized')
@@ -1280,17 +1362,22 @@ async def initialize_server() -> MCPConfig:
 
 async def run_mcp_server():
     """Run the MCP server in the current event loop."""
+    logger.info('=' * 60)
+    logger.info('Starting Graphiti MCP Server...')
+    logger.info('=' * 60)
+
     # Initialize the server
     mcp_config = await initialize_server()
 
     # Run the server with stdio transport for MCP in the same event loop
     logger.info(f'Starting MCP server with transport: {mcp_config.transport}')
     if mcp_config.transport == 'stdio':
+        logger.info('MCP server is now listening for stdio requests')
         await mcp.run_stdio_async()
     elif mcp_config.transport == 'sse':
-        logger.info(
-            f'Running MCP server with SSE transport on {mcp.settings.host}:{mcp.settings.port}'
-        )
+        logger.info(f'MCP server is now listening on {mcp.settings.host}:{mcp.settings.port}')
+        logger.info('Server is ready to accept client connections')
+        logger.info('=' * 60)
         await mcp.run_sse_async()
 
 

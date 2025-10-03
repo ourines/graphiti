@@ -1,0 +1,12 @@
+
+{
+  "mcpServers": {
+    "graphiti": {
+      "type": "sse",
+      "url": "http://127.0.0.1:5150/sse",
+      "headers": {
+        "Authorization": "Bearer EHT0/WXJTIq9ioBkbj13kCx0dzoTZs5AjH5PHXl4zT4="
+      }
+    }
+  }
+}

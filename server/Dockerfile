@@ -11,8 +11,11 @@ COPY pyproject.toml uv.lock README.md ./
 COPY graphiti_core ./graphiti_core
 COPY server ./server
 
-# 安装依赖（包括 Gemini 支持）
+# 安装依赖（graphiti-core + Gemini）
 RUN uv sync --extra google-genai
+
+# 安装 server 依赖到 .venv（uvicorn, fastapi 等）
+RUN uv pip install -e ./server
 
 # Stage 2: Production
 FROM python:3.11-slim

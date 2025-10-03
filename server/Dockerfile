@@ -7,7 +7,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # 复制项目文件
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY graphiti_core ./graphiti_core
 COPY server ./server
 

@@ -189,7 +189,7 @@ echo ""
 
 # 启动服务
 echo "启动服务..."
-$DOCKER_COMPOSE -f docker-compose.prod.yml --env-file .env.prod up -d
+$DOCKER_COMPOSE -f docker-compose.prod.yml --env-file .env.prod up -d --build
 echo ""
 
 # 等待服务启动

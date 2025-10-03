@@ -24,10 +24,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# 复制 uv
-COPY --from=builder /root/.cargo/bin/uv /usr/local/bin/
-
-# 复制项目和依赖
+# 复制项目和依赖（包含 .venv 虚拟环境）
 COPY --from=builder /app /app
 
 # 设置 Python 路径

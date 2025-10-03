@@ -11,8 +11,8 @@ COPY pyproject.toml uv.lock README.md ./
 COPY graphiti_core ./graphiti_core
 COPY server ./server
 
-# 安装依赖（graphiti-core + Gemini）
-RUN uv sync --extra google-genai
+# 安装依赖（graphiti-core + Gemini + opensearch for compatibility）
+RUN uv sync --extra google-genai --extra neo4j-opensearch
 
 # 安装 server 依赖到 .venv（uvicorn, fastapi 等）
 RUN uv pip install -e ./server

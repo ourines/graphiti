@@ -35,14 +35,17 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ourines/graphiti.git",
+    "url": "https://github.com/getzep/graphiti.git",
     "directory": "mcp-http-server"
   },
   "bugs": {
-    "url": "https://github.com/ourines/graphiti/issues"
+    "url": "https://github.com/getzep/graphiti/issues"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",

@@ -155,7 +155,7 @@ export class Logger {
     'credentials',
   ];
 
-  constructor(private config: GraphitiConfig) {
+  constructor(config: GraphitiConfig) {
     this.currentLevel = this.levels[config.logLevel];
   }
 

@@ -39,7 +39,7 @@ export class GraphitiClient {
   private timeout: number;
 
   constructor(
-    private config: GraphitiConfig,
+    config: GraphitiConfig,
     private logger: Logger
   ) {
     this.baseUrl = config.apiUrl.replace(/\/$/, ''); // Remove trailing slash
@@ -107,7 +107,7 @@ export class GraphitiClient {
         throw new Error(`GraphiTi API Error (${response.status}): ${errorDetails}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as T;
       this.logger.debug(`API Response received`);
       return data;
     } catch (error) {

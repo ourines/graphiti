@@ -1,0 +1,54 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.npm
+.yarn
+
+# Build artifacts
+dist
+
+# Tests
+coverage
+.nyc_output
+*.test.ts
+*.spec.ts
+
+# Documentation
+*.md
+docs/
+.github/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+test-*.sh
+*.sh
+!start.sh
+
+# Misc
+TODO
+NOTES

@@ -277,11 +277,14 @@ export class GraphitiMCPServer {
     app.use(express.json());
 
     // MCP protocol endpoint
-    app.post('/mcp', async (req, res) => {
+    app.post('/mcp', async (_req, res) => {
       try {
-        this.logger.debug('Received MCP request:', req.body);
-        const response = await this.server.handleRequest(req.body);
-        res.json(response);
+        this.logger.debug('Received MCP request');
+        // Note: MCP SDK doesn't expose handleRequest directly in HTTP mode
+        // This endpoint is for future implementation or custom handling
+        res.status(501).json({
+          error: 'MCP over HTTP not implemented - use stdio mode instead',
+        });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         this.logger.error('MCP request error:', errorMessage);
@@ -292,7 +295,7 @@ export class GraphitiMCPServer {
     });
 
     // Health check endpoint
-    app.get('/health', async (req, res) => {
+    app.get('/health', async (_req, res) => {
       const healthStatus = await this.client.healthCheck();
       res.json({
         status: 'ok',
@@ -311,7 +314,7 @@ export class GraphitiMCPServer {
     });
 
     // Debug endpoint - list tools
-    app.get('/debug/tools', (req, res) => {
+    app.get('/debug/tools', (_req, res) => {
       res.json({
         tools: TOOLS,
       });

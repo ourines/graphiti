@@ -38,5 +38,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/healthcheck || exit 1
 
-# 启动命令
-CMD ["uvicorn", "server.graph_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 启动命令（使用完整路径确保找到 uvicorn）
+CMD ["/app/.venv/bin/uvicorn", "server.graph_service.main:app", "--host", "0.0.0.0", "--port", "8000"]

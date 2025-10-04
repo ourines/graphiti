@@ -11,7 +11,7 @@ from graphiti_core.nodes import EpisodeType, Node  # type: ignore
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data  # type: ignore
 
 from graph_service.config import get_settings
-from graph_service.dto import AddEntityNodeRequest, AddMessagesRequest, Message, Result
+from graph_service.dto import AddEntityNodeRequest, AddMessagesRequest, BatchDeleteRequest, Message, Result
 from graph_service.zep_graphiti import (
     ZepGraphiti,
     ZepGraphitiDep,
@@ -250,7 +250,7 @@ async def clear(
 
 @router.post('/batch-delete', status_code=status.HTTP_200_OK)
 async def batch_delete(
-    uuids: list[str],
+    request: BatchDeleteRequest,
     graphiti: ZepGraphitiDep,
 ):
     """
@@ -262,9 +262,9 @@ async def batch_delete(
     **Warning**: This operation is irreversible!
     """
     # Use the built-in batch delete functionality
-    await Node.delete_by_uuids(graphiti.driver, uuids)
+    await Node.delete_by_uuids(graphiti.driver, request.uuids)
 
     return Result(
-        message=f'Successfully deleted {len(uuids)} nodes',
+        message=f'Successfully deleted {len(request.uuids)} nodes',
         success=True,
     )

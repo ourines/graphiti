@@ -571,7 +571,7 @@ export class GraphitiClient {
   }> {
     this.logger.info(`Finding relationship path from ${params.source_entity}`);
 
-    return this.fetch('/find-path', {
+    return this.fetch('/relationships/find-path', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -602,7 +602,7 @@ export class GraphitiClient {
   }> {
     this.logger.info(`Getting neighbors for entity ${uuid} within ${depth} hops`);
 
-    return this.fetch(`/entity/${uuid}/neighbors?depth=${depth}`, {
+    return this.fetch(`/relationships/entity/${uuid}/neighbors?depth=${depth}`, {
       method: 'GET',
     });
   }
@@ -635,7 +635,7 @@ export class GraphitiClient {
 
     return this.fetch('/ingest/batch-delete', {
       method: 'POST',
-      body: JSON.stringify(uuids),
+      body: JSON.stringify({ uuids }),
     });
   }
 

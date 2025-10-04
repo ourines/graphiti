@@ -9,7 +9,6 @@ import type { GraphitiConfig, Logger } from './config.js';
 import { GraphitiClient } from './client.js';
 import { TOOLS, type ToolInputs } from './tools.js';
 import { ContextManager } from './context-manager.js';
-import { createAuthMiddleware } from './auth-middleware.js';
 
 /**
  * Union type for all possible tool results
@@ -122,6 +121,35 @@ type ToolResult =
         distance: number;
       }>;
       total: number;
+    }
+  | {
+      uuid: string;
+      updated_fields: string[];
+      message: string;
+    }
+  | {
+      message: string;
+      job_ids: string[];
+      queue_size: number;
+    }
+  | {
+      group_id: string;
+      similarity_threshold: number;
+      total_duplicates: number;
+      duplicates: Array<{
+        entities: Array<{
+          uuid: string;
+          name: string;
+          summary?: string;
+        }>;
+        similarity: number;
+      }>;
+    }
+  | {
+      tags: string[];
+      count: number;
+      entity_tags: string[];
+      message: string;
     };
 
 /**
@@ -777,18 +805,6 @@ export class GraphitiMCPServer {
   async startHTTP(): Promise<void> {
     const app = express();
     app.use(express.json());
-
-    // Apply authentication middleware (MCP standard)
-    const authMiddleware = createAuthMiddleware(this.config, this.logger);
-    app.use(authMiddleware);
-
-    // Log authentication status
-    if (this.config.auth.enabled) {
-      this.logger.info(`Authentication enabled: ${this.config.auth.method} method`);
-      this.logger.info(`Public endpoints: ${this.config.auth.publicEndpoints.join(', ')}`);
-    } else {
-      this.logger.warn('⚠️  Authentication disabled - not recommended for public deployment');
-    }
 
     // MCP protocol endpoint
     app.post('/mcp', async (_req, res) => {

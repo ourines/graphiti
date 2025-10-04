@@ -6,32 +6,45 @@
 export const TOOLS = [
   {
     name: 'add_memory',
-    description: `Add an episode to memory. This is the primary way to add information to the graph.
+    description: `Add information to a project's memory.
 
-Use this tool to store any information that you want to remember for future conversations, such as:
-- User preferences and settings
-- Important facts about the user or their projects
-- Decisions made during the conversation
-- Context that should be retained across sessions
+📖 CONCEPT: group_id = Project/Workspace
+Each project has its own isolated memory space. Use consistent project names:
+  - "default_user" - Personal memories (default)
+  - "keymize" - Keymize project knowledge
+  - "client_acme" - Client-specific work
+  - "research_ml" - Research notes
 
-The memory will be processed and added to the knowledge graph, where it can be retrieved later using search_memory.
+🎯 Use this to store:
+- User preferences and project settings
+- Important facts and decisions
+- Context that should persist across sessions
+- Any information worth remembering
 
-⚠️ IMPORTANT: Always use "default_user" as the group_id for personal conversations, or use a consistent project-specific ID (e.g., "project_keymize") for project-related memories. The group_id acts like a folder - memories in different groups are completely separate.`,
+⚠️ CRITICAL: Use the SAME project name consistently!
+  ✅ Good: Always use "keymize" for Keymize project
+  ❌ Bad: Mixing "keymize", "project_keymize", "Keymize"
+
+💡 Tip: Use list_groups to see existing projects before creating new ones.`,
     inputSchema: {
       type: 'object',
       properties: {
         name: {
           type: 'string',
-          description: 'A short name/title for this memory episode',
+          description: 'Short title for this memory (e.g., "User prefers dark mode")',
         },
         content: {
           type: 'string',
-          description: 'The content of the episode to persist to memory',
+          description: 'The information to remember',
         },
         group_id: {
           type: 'string',
           description:
-            'Memory workspace ID - IMPORTANT: Use "default_user" for personal memories. All memories with the same group_id are stored together and can be searched together. Think of it like a folder name for organizing different knowledge spaces (e.g., "work", "personal", "project_xyz"). Always use the SAME group_id for related memories.',
+            'Project name for this memory. Examples:\n' +
+            '  - "default_user" (personal)\n' +
+            '  - "keymize" (Keymize project)\n' +
+            '  - "client_acme" (Acme Corp work)\n' +
+            'All memories in the same project are stored and searched together. Different projects are completely isolated.',
         },
         role: {
           type: 'string',
@@ -49,36 +62,47 @@ The memory will be processed and added to the knowledge graph, where it can be r
 
   {
     name: 'search_memory',
-    description: `Search the graph memory for relevant facts and relationships.
+    description: `Search memories across one or multiple projects.
 
-Use this tool to retrieve information that was previously stored using add_memory. The search uses hybrid retrieval combining:
-- Semantic search (meaning-based matching)
-- Keyword search (exact term matching)
-- Graph traversal (related entities and relationships)
+📖 PROJECT SEARCH BASICS:
+Projects are isolated. You MUST specify which projects to search:
+  • Single project: ["keymize"]
+  • Multiple projects: ["keymize", "xiaoman", "shared"] ← Cross-project search!
+  • Personal only: ["default_user"]
 
-⚠️ IMPORTANT: You MUST specify group_ids to search in. Use ["default_user"] for personal memories. If you added memories to a different group_id, you must search in that same group to find them. Searching in the wrong group will return no results.
+🔍 Hybrid retrieval combines:
+- Semantic search (meaning-based)
+- Keyword search (exact terms)
+- Graph traversal (relationships)
 
-🆕 TIME FILTERING: You can now filter by time range!
-- start_time: Only return facts valid after this time (ISO 8601: "2024-01-01T00:00:00Z")
-- end_time: Only return facts valid before this time
-- Use cases: "What did we discuss last week?", "Memories from January 2024"
-
-🆕 MULTI-PROJECT SEARCH: Enhanced search capabilities for managing multiple projects!
-- priority_group_id: Prioritize results from a specific project (e.g., "keymize" over "xiaoman")
-- min_priority: Only return facts with priority >= this value (0-10 scale)
+🎯 MULTI-PROJECT FEATURES:
+- priority_group_id: Rank one project higher (e.g., search ["keymize", "xiaoman"] but prioritize "keymize")
+- min_priority: Filter by importance (0-10 scale)
 - tags: Filter by tags (e.g., ["#Rust", "#工具"])
-- Results now include source_group_id, relevance_score, tags, and priority fields`,
+
+⏰ TIME FILTERING:
+- start_time / end_time: Filter by validity period (ISO 8601)
+
+⚠️ COMMON MISTAKE: Searching wrong project returns empty! Use list_groups if unsure.
+
+💡 Example workflow:
+  1. list_groups() → See ["keymize", "xiaoman"]
+  2. search_memory(query="API design", group_ids=["keymize", "xiaoman"], priority_group_id="keymize")`,
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query describing what information you want to find',
+          description: 'What you want to find (e.g., "API design decisions")',
         },
         group_ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'List of memory workspace IDs to search in. Use ["default_user"] for personal memories. You can search multiple workspaces at once (e.g., ["work", "personal"]) to find memories across different contexts. MUST match the group_id used when adding memories.',
+          description: 'Projects to search in. Examples:\n' +
+            '  • ["keymize"] - Single project\n' +
+            '  • ["keymize", "xiaoman", "shared"] - Cross-project search\n' +
+            '  • ["default_user"] - Personal memories\n' +
+            'Results include which project each fact came from (source_group_id).',
         },
         max_facts: {
           type: 'number',
@@ -95,7 +119,8 @@ Use this tool to retrieve information that was previously stored using add_memor
         },
         priority_group_id: {
           type: 'string',
-          description: '🆕 Optional: Prioritize results from this specific project/group. Results from this group will rank higher in search results.',
+          description: '🔥 Boost results from one project. When searching multiple projects, this makes one project rank higher.\n' +
+            'Example: search ["keymize", "xiaoman"], priority_group_id="keymize" → Keymize results appear first.',
         },
         min_priority: {
           type: 'number',
@@ -282,17 +307,30 @@ You'll need the fact UUID from search_memory results.`,
 
   {
     name: 'list_groups',
-    description: `List all memory workspaces (group_ids) in the knowledge graph.
+    description: `List all projects in your knowledge graph.
 
-Use this to discover what memory spaces exist. This is extremely helpful for:
-- Finding all available groups before searching
-- Avoiding typos in group_id (e.g., "default_user" vs "user_liubiao")
-- Understanding the organizational structure of your memories
-- Knowing which contexts have stored data
+📋 Returns: Array of project names (group_ids)
+Example: ["default_user", "keymize", "xiaoman", "research_2024"]
 
-Example results: ["default_user", "project_keymize", "work", "personal"]
+💡 When to use:
+1. **Before searching** - "What projects exist?" → Avoid searching non-existent projects
+2. **Avoid typos** - See exact spelling ("keymize" not "Keymize" or "project_keymize")
+3. **Rediscover data** - "Where did I store that?" → Find forgotten projects
+4. **Multi-project work** - Get list for cross-project search
 
-This solves the common problem: "I stored memories but can't find them because I forgot the group_id!"`,
+🎯 Common workflows:
+• Starting fresh:
+  list_groups() → See ["default_user", "keymize"]
+
+• Multi-project search:
+  list_groups() → Find ["keymize", "xiaoman", "shared"]
+  search_memory(query="API", group_ids=["keymize", "xiaoman"], priority_group_id="keymize")
+
+• Lost memories:
+  "I can't find my memories!" → list_groups()
+  → Discover you used "project_old" not "project-old"
+
+⚠️ Solves: "I stored memories but can't find them!" → Check the list first.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -485,37 +523,38 @@ This tool discovers the local "neighborhood" around an entity by traversing the 
 
   {
     name: 'set_context',
-    description: `Set the current conversation context (active project/workspace).
+    description: `Set which project you're currently working on.
 
-🎯 Purpose:
-This tool enables context-aware memory operations by setting which group_id should be prioritized in searches.
+📖 CONCEPT: Active Project
+Like "opening a project" in VS Code or "switching branches" in Git.
+Sets the current project focus for automatic context management.
 
-🔍 How it works:
-- Sets the active group_id for the current conversation
-- Future search_memory calls will automatically prioritize results from this group
-- Tracks recently used groups for easy context switching
-- Auto-applied to add_memory operations
+🎯 What it does:
+- Marks one project as "active" (e.g., "keymize")
+- Future searches automatically prioritize this project
+- Tracks recent projects for easy switching
 
-💡 Use cases:
-- "Switch to project keymize context" → set_context(group_id="keymize")
-- "Work on personal memories now" → set_context(group_id="default_user")
-- "Focus on work-related knowledge" → set_context(group_id="work")
+💡 When to use:
+- "I'm working on Keymize now" → set_context(group_id="keymize")
+- "Switch to personal tasks" → set_context(group_id="default_user")
+- "Focus on client work" → set_context(group_id="client_acme")
 
 ⚡ Benefits:
-- No need to manually specify priority_group_id in every search
-- Reduces context-switching overhead
-- Makes multi-project workflows more natural
+- No manual priority_group_id in every search
+- Natural multi-project workflow
+- Reduces cognitive overhead
 
-Example workflow:
-1. set_context(group_id="project_x")
-2. search_memory(query="API design", group_ids=["project_x", "shared"])
-   → Automatically prioritizes project_x results`,
+Example:
+1. set_context(group_id="keymize")
+2. search_memory(query="API", group_ids=["keymize", "shared"])
+   → Auto-prioritizes Keymize results!`,
     inputSchema: {
       type: 'object',
       properties: {
         group_id: {
           type: 'string',
-          description: 'The group_id to set as current context. Use list_groups to see available groups.',
+          description: 'Project name to set as active. Examples: "keymize", "default_user", "client_acme".\n' +
+            'Tip: Use list_groups to see available projects.',
         },
       },
       required: ['group_id'],
@@ -524,20 +563,25 @@ Example workflow:
 
   {
     name: 'get_context',
-    description: `Get the current conversation context state.
+    description: `Check which project is currently active.
 
 📊 Returns:
-- Current active group_id (or null if not set)
-- Recently used group_ids (last 10)
-- Last updated timestamp
+- currentGroupId: Active project (e.g., "keymize" or null)
+- recentGroupIds: Recently used projects (last 10)
+- lastUpdated: When context was last changed
 
 💡 Use cases:
-- "What context am I in?" → Check currentGroupId
-- "What projects have I worked on recently?" → Check recentGroupIds
-- Debugging context-related issues
-- Verifying context switches
+- "What project am I working on?" → Check currentGroupId
+- "What projects did I use recently?" → Check recentGroupIds
+- Verify context after switching projects
 
-This helps you understand which project/workspace is currently active and will be prioritized in searches.`,
+Example response:
+{
+  "currentGroupId": "keymize",
+  "recentGroupIds": ["keymize", "xiaoman", "default_user"],
+  "lastUpdated": "2024-10-05T10:30:00Z",
+  "message": "Current context: keymize"
+}`,
     inputSchema: {
       type: 'object',
       properties: {},

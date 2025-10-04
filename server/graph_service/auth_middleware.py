@@ -4,6 +4,7 @@ API Authentication Middleware for GraphiTi FastAPI Server
 Implements Bearer Token and API Key authentication for public deployment.
 """
 
+import secrets
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -101,7 +102,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 detail="Empty bearer token"
             )
 
-        if token != self.settings.api_auth_bearer_token:
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(token, self.settings.api_auth_bearer_token or ""):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid bearer token"
@@ -125,7 +127,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 detail="Empty API key"
             )
 
-        if api_key != self.settings.api_auth_api_key:
+        # Use constant-time comparison to prevent timing attacks
+        if not secrets.compare_digest(api_key, self.settings.api_auth_api_key or ""):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key"

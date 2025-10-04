@@ -1,14 +1,13 @@
 {
   "mcpServers": {
-    "graphiti-mcp-http": {
+    "graphiti": {
       "command": "node",
       "args": [
         "/Users/liubiao/Documents/GitHub/graphiti/mcp-http-server/dist/index.js"
       ],
       "env": {
         "GRAPHITI_API_URL": "http://127.0.0.1:8000",
-        "MCP_TRANSPORT": "stdio",
-        "LOG_LEVEL": "info"
+        "GRAPHITI_API_TOKEN": "your-token-here"
       }
     }
   }

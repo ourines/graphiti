@@ -1,0 +1,28 @@
+services:
+  graphiti-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # Transport mode
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=3000
+
+      # GraphiTi API connection
+      - GRAPHITI_API_URL=${GRAPHITI_API_URL:-http://host.docker.internal:8000}
+      - GRAPHITI_API_TOKEN=${GRAPHITI_API_TOKEN}
+
+      # Optional settings
+      - GRAPHITI_DEFAULT_GROUP_ID=${GRAPHITI_DEFAULT_GROUP_ID:-default}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - GRAPHITI_REQUEST_TIMEOUT=${GRAPHITI_REQUEST_TIMEOUT:-30000}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

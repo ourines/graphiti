@@ -70,6 +70,39 @@ services:
     networks:
       - graphiti-network
 
+  mcp-http-server:
+    build:
+      context: .
+      dockerfile: mcp-http-server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # MCP HTTP 服务端口
+    environment:
+      # Transport 模式
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=3000
+
+      # GraphiTi API 连接（使用内部网络）
+      - GRAPHITI_API_URL=http://graphiti-api:8000
+      # Token由客户端通过X-GraphiTi-Token header透传，无需配置
+
+      # 可选配置
+      - GRAPHITI_DEFAULT_GROUP_ID=${GRAPHITI_DEFAULT_GROUP_ID:-default}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - GRAPHITI_REQUEST_TIMEOUT=${GRAPHITI_REQUEST_TIMEOUT:-30000}
+    depends_on:
+      graphiti-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - graphiti-network
+
 volumes:
   neo4j_prod_data:
     driver: local

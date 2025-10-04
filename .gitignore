@@ -167,3 +167,4 @@ cache.db*
 # All DS_Store files
 .DS_Store
 .env.prod
+mcp-http-server/.env.http

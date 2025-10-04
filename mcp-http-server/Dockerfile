@@ -4,14 +4,14 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # 复制 package 文件
-COPY package*.json ./
+COPY mcp-http-server/package*.json ./
 
 # 安装依赖（包括 devDependencies 用于构建）
 RUN npm ci
 
 # 复制源代码
-COPY tsconfig.json ./
-COPY src ./src
+COPY mcp-http-server/tsconfig.json ./
+COPY mcp-http-server/src ./src
 
 # 构建
 RUN npm run build
@@ -25,7 +25,7 @@ WORKDIR /app
 RUN apk add --no-cache curl
 
 # 复制 package 文件
-COPY package*.json ./
+COPY mcp-http-server/package*.json ./
 
 # 仅安装生产依赖
 RUN npm ci --production && \

@@ -107,10 +107,11 @@ function validateConfig(config: GraphitiConfig): void {
  * Load configuration from environment variables
  */
 export function loadConfig(): GraphitiConfig {
-  // Build API headers
+  // Build API headers (server-level, optional)
+  // Token can also be provided per-request via X-GraphiTi-Token header
   let apiHeaders: Record<string, string> = {};
 
-  // Priority 1: Simple token (recommended)
+  // Priority 1: Simple token (optional, for backward compatibility)
   if (process.env.GRAPHITI_API_TOKEN) {
     apiHeaders['Authorization'] = `Bearer ${process.env.GRAPHITI_API_TOKEN}`;
   }

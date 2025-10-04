@@ -41,7 +41,7 @@ export interface GetEpisodesParams {
  */
 export class GraphitiClient {
   private baseUrl: string;
-  private headers: Record<string, string>;
+  private defaultHeaders: Record<string, string>;
   private timeout: number;
 
   constructor(
@@ -49,8 +49,18 @@ export class GraphitiClient {
     private logger: Logger
   ) {
     this.baseUrl = config.apiUrl.replace(/\/$/, ''); // Remove trailing slash
-    this.headers = config.apiHeaders;
+    this.defaultHeaders = config.apiHeaders;
     this.timeout = config.requestTimeout;
+  }
+
+  /**
+   * Set per-request token (overrides default headers)
+   */
+  setRequestToken(token: string | undefined): Record<string, string> {
+    if (token) {
+      return { 'Authorization': `Bearer ${token}` };
+    }
+    return {};
   }
 
   /**
@@ -59,7 +69,8 @@ export class GraphitiClient {
   private async fetch<T>(
     path: string,
     options: RequestInit = {},
-    retryCount = 0
+    retryCount = 0,
+    requestToken?: string
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const maxRetries = 3;
@@ -69,15 +80,20 @@ export class GraphitiClient {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
+    // Build headers: default headers + per-request token (overrides default) + options headers
+    const tokenHeaders = this.setRequestToken(requestToken);
+    const finalHeaders = {
+      'Content-Type': 'application/json',
+      ...this.defaultHeaders,
+      ...tokenHeaders,
+      ...options.headers,
+    };
+
     try {
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.headers,
-          ...options.headers,
-        },
+        headers: finalHeaders,
       });
 
       clearTimeout(timeoutId);

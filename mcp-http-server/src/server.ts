@@ -1,10 +1,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import express from 'express';
+import { Hono, type Context } from 'hono';
+import { serve } from '@hono/node-server';
+import { randomUUID } from 'crypto';
 import type { GraphitiConfig, Logger } from './config.js';
 import { GraphitiClient } from './client.js';
 import { TOOLS, type ToolInputs } from './tools.js';
@@ -427,6 +430,7 @@ export class GraphitiMCPServer {
   private client: GraphitiClient;
   private logger: Logger;
   private contextManager: ContextManager;
+  private requestToken: string | undefined;
 
   constructor(
     private config: GraphitiConfig,
@@ -450,6 +454,24 @@ export class GraphitiMCPServer {
     );
 
     this.setupHandlers();
+  }
+
+  /**
+   * Create a client with per-request token (if provided)
+   */
+  private getClient(): GraphitiClient {
+    if (this.requestToken) {
+      // Create temporary config with request token
+      const tempConfig = {
+        ...this.config,
+        apiHeaders: {
+          ...this.config.apiHeaders,
+          'Authorization': `Bearer ${this.requestToken}`,
+        },
+      };
+      return new GraphitiClient(tempConfig, this.logger);
+    }
+    return this.client;
   }
 
   /**
@@ -481,7 +503,7 @@ export class GraphitiMCPServer {
             // Track group usage for auto-context detection
             this.contextManager.trackGroupUsage(args.group_id);
 
-            result = await this.client.addMemory({
+            result = await this.getClient().addMemory({
               name: args.name,
               content: args.content,
               group_id: args.group_id,
@@ -508,7 +530,7 @@ export class GraphitiMCPServer {
               this.logger.info(`Auto-prioritizing search results from context: ${currentContext}`);
             }
 
-            result = await this.client.searchMemory({
+            result = await this.getClient().searchMemory({
               query: args.query,
               group_ids: args.group_ids,
               max_facts: args.max_facts,
@@ -528,7 +550,7 @@ export class GraphitiMCPServer {
                 'Invalid parameters for get_episodes. Required: group_id (string), last_n (number, max 100, optional)'
               );
             }
-            result = await this.client.getEpisodes({
+            result = await this.getClient().getEpisodes({
               group_id: args.group_id,
               last_n: args.last_n,
             });
@@ -539,7 +561,7 @@ export class GraphitiMCPServer {
             if (!isDeleteEpisodeParams(args)) {
               throw new Error('Invalid parameters for delete_episode. Required: uuid (string)');
             }
-            result = await this.client.deleteEpisode(args.uuid);
+            result = await this.getClient().deleteEpisode(args.uuid);
             break;
           }
 
@@ -547,7 +569,7 @@ export class GraphitiMCPServer {
             if (!isClearGraphParams(args)) {
               throw new Error('Invalid parameters for clear_graph');
             }
-            result = await this.client.clearGraph();
+            result = await this.getClient().clearGraph();
             break;
           }
 
@@ -555,7 +577,7 @@ export class GraphitiMCPServer {
             if (!isGetQueueStatusParams(args)) {
               throw new Error('Invalid parameters for get_queue_status');
             }
-            result = await this.client.getQueueStatus();
+            result = await this.getClient().getQueueStatus();
             break;
           }
 
@@ -563,7 +585,7 @@ export class GraphitiMCPServer {
             if (!isDeleteGroupParams(args)) {
               throw new Error('Invalid parameters for delete_group. Required: group_id (string)');
             }
-            result = await this.client.deleteGroup(args.group_id);
+            result = await this.getClient().deleteGroup(args.group_id);
             break;
           }
 
@@ -571,7 +593,7 @@ export class GraphitiMCPServer {
             if (!isDeleteFactParams(args)) {
               throw new Error('Invalid parameters for delete_fact. Required: uuid (string)');
             }
-            result = await this.client.deleteFact(args.uuid);
+            result = await this.getClient().deleteFact(args.uuid);
             break;
           }
 
@@ -579,7 +601,7 @@ export class GraphitiMCPServer {
             if (!isGetFactDetailsParams(args)) {
               throw new Error('Invalid parameters for get_fact_details. Required: uuid (string)');
             }
-            result = await this.client.getFactDetails(args.uuid);
+            result = await this.getClient().getFactDetails(args.uuid);
             break;
           }
 
@@ -587,7 +609,7 @@ export class GraphitiMCPServer {
             if (!isListGroupsParams(args)) {
               throw new Error('Invalid parameters for list_groups');
             }
-            result = await this.client.listGroups();
+            result = await this.getClient().listGroups();
             break;
           }
 
@@ -595,7 +617,7 @@ export class GraphitiMCPServer {
             if (!isGetEntitiesParams(args)) {
               throw new Error('Invalid parameters for get_entities. Required: group_id (string), limit (number, max 200, optional)');
             }
-            result = await this.client.getEntities(args.group_id, args.limit);
+            result = await this.getClient().getEntities(args.group_id, args.limit);
             break;
           }
 
@@ -603,7 +625,7 @@ export class GraphitiMCPServer {
             if (!isGetEntityRelationshipsParams(args)) {
               throw new Error('Invalid parameters for get_entity_relationships. Required: uuid (string)');
             }
-            result = await this.client.getEntityRelationships(args.uuid);
+            result = await this.getClient().getEntityRelationships(args.uuid);
             break;
           }
 
@@ -611,7 +633,7 @@ export class GraphitiMCPServer {
             if (!isGetGraphStatsParams(args)) {
               throw new Error('Invalid parameters for get_graph_stats. Required: group_id (string)');
             }
-            result = await this.client.getGraphStats(args.group_id);
+            result = await this.getClient().getGraphStats(args.group_id);
             break;
           }
 
@@ -619,7 +641,7 @@ export class GraphitiMCPServer {
             if (!isFindRelationshipPathParams(args)) {
               throw new Error('Invalid parameters for find_relationship_path. Required: source_entity (string), Optional: target_entity (string), max_depth (number), group_ids (string[])');
             }
-            result = await this.client.findRelationshipPath({
+            result = await this.getClient().findRelationshipPath({
               source_entity: args.source_entity,
               target_entity: args.target_entity,
               max_depth: args.max_depth,
@@ -632,7 +654,7 @@ export class GraphitiMCPServer {
             if (!isGetEntityNeighborsParams(args)) {
               throw new Error('Invalid parameters for get_entity_neighbors. Required: uuid (string), Optional: depth (number)');
             }
-            result = await this.client.getEntityNeighbors(args.uuid, args.depth);
+            result = await this.getClient().getEntityNeighbors(args.uuid, args.depth);
             break;
           }
 
@@ -669,7 +691,7 @@ export class GraphitiMCPServer {
             if (!isUpdateFactParams(args)) {
               throw new Error('Invalid parameters for update_fact. Required: uuid (string), optional: fact, valid_at, invalid_at, tags, priority, metadata');
             }
-            result = await this.client.updateFact(args);
+            result = await this.getClient().updateFact(args);
             break;
           }
 
@@ -677,7 +699,7 @@ export class GraphitiMCPServer {
             if (!isUpdateEntityParams(args)) {
               throw new Error('Invalid parameters for update_entity. Required: uuid (string), optional: name, summary, tags, priority, metadata');
             }
-            result = await this.client.updateEntity(args);
+            result = await this.getClient().updateEntity(args);
             break;
           }
 
@@ -685,7 +707,7 @@ export class GraphitiMCPServer {
             if (!isBatchAddMemoriesParams(args)) {
               throw new Error('Invalid parameters for batch_add_memories. Required: group_id (string), memories (array)');
             }
-            result = await this.client.batchAddMemories(args.group_id, args.memories);
+            result = await this.getClient().batchAddMemories(args.group_id, args.memories);
             break;
           }
 
@@ -693,7 +715,7 @@ export class GraphitiMCPServer {
             if (!isFindDuplicateEntitiesParams(args)) {
               throw new Error('Invalid parameters for find_duplicate_entities. Required: group_id (string), optional: similarity_threshold, limit');
             }
-            result = await this.client.findDuplicateEntities(
+            result = await this.getClient().findDuplicateEntities(
               args.group_id,
               args.similarity_threshold,
               args.limit
@@ -705,7 +727,7 @@ export class GraphitiMCPServer {
             if (!isMergeEntitiesParams(args)) {
               throw new Error('Invalid parameters for merge_entities. Required: source_uuid (string), target_uuid (string)');
             }
-            result = await this.client.mergeEntities(args.source_uuid, args.target_uuid);
+            result = await this.getClient().mergeEntities(args.source_uuid, args.target_uuid);
             break;
           }
 
@@ -713,7 +735,7 @@ export class GraphitiMCPServer {
             if (!isBatchDeleteParams(args)) {
               throw new Error('Invalid parameters for batch_delete. Required: uuids (array of strings, min 1)');
             }
-            result = await this.client.batchDelete(args.uuids);
+            result = await this.getClient().batchDelete(args.uuids);
             break;
           }
 
@@ -721,7 +743,7 @@ export class GraphitiMCPServer {
             if (!isListTagsParams(args)) {
               throw new Error('Invalid parameters for list_tags. Optional: group_id (string)');
             }
-            result = await this.client.listTags(args.group_id);
+            result = await this.getClient().listTags(args.group_id);
             break;
           }
 
@@ -729,7 +751,7 @@ export class GraphitiMCPServer {
             if (!isRenameTagParams(args)) {
               throw new Error('Invalid parameters for rename_tag. Required: old_tag (string), new_tag (string), optional: group_id (string)');
             }
-            result = await this.client.renameTag(args.old_tag, args.new_tag, args.group_id);
+            result = await this.getClient().renameTag(args.old_tag, args.new_tag, args.group_id);
             break;
           }
 
@@ -784,7 +806,7 @@ export class GraphitiMCPServer {
     this.logger.info('Starting MCP server in stdio mode');
 
     // Check backend health
-    const healthStatus = await this.client.healthCheck();
+    const healthStatus = await this.getClient().healthCheck();
     if (!healthStatus.healthy) {
       this.logger.warn(
         `GraphiTi API at ${this.config.apiUrl} is not responding: ${healthStatus.error}. Some features may not work.`
@@ -800,34 +822,84 @@ export class GraphitiMCPServer {
   }
 
   /**
-   * Start server in HTTP mode (for debugging and testing)
+   * Start server in HTTP mode with Streamable HTTP transport
    */
   async startHTTP(): Promise<void> {
-    const app = express();
-    app.use(express.json());
+    this.logger.info('Starting MCP server in HTTP mode with Streamable HTTP');
 
-    // MCP protocol endpoint
-    app.post('/mcp', async (_req, res) => {
+    // Check backend health
+    const healthStatus = await this.getClient().healthCheck();
+    if (!healthStatus.healthy) {
+      this.logger.warn(
+        `GraphiTi API at ${this.config.apiUrl} is not responding: ${healthStatus.error}. Some features may not work.`
+      );
+    } else if (healthStatus.latency) {
+      this.logger.info(`GraphiTi API health check passed (${healthStatus.latency}ms)`);
+    }
+
+    const app = new Hono();
+
+    // Track active connections
+    let activeConnections = 0;
+
+    // MCP endpoint - Streamable HTTP (supports both GET and POST)
+    app.post('/mcp', async (c: Context) => {
+      this.logger.info('New MCP request received');
+      activeConnections++;
+
       try {
-        this.logger.debug('Received MCP request');
-        // Note: MCP SDK doesn't expose handleRequest directly in HTTP mode
-        // This endpoint is for future implementation or custom handling
-        res.status(501).json({
-          error: 'MCP over HTTP not implemented - use stdio mode instead',
+        // Extract token from request header (client pass-through)
+        const requestToken = c.req.header('x-graphiti-token');
+        this.requestToken = requestToken;
+
+        if (requestToken) {
+          this.logger.debug('Using client-provided token');
+        }
+
+        // Get request body
+        const body = await c.req.json();
+
+        // Create new transport for each request (stateless mode)
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          enableJsonResponse: true,
         });
+
+        // Note: Hono doesn't have res.on('close'), cleanup handled in finally
+        // Connect server to transport
+        await this.server.connect(transport);
+
+        // Convert Hono request to Node.js-like request for transport
+        const nodeReq = c.req.raw as any;
+        const nodeRes = c.env?.outgoing as any;
+
+        // Handle the request
+        await transport.handleRequest(nodeReq, nodeRes, body);
+
+        // Return empty response (transport handles the actual response)
+        return new Response(null);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error('MCP request error:', errorMessage);
-        res.status(500).json({
-          error: errorMessage,
-        });
+        this.logger.error('MCP request handling error:', errorMessage);
+
+        return c.json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: errorMessage,
+          },
+          id: null,
+        }, 500);
+      } finally {
+        activeConnections--;
+        this.requestToken = undefined; // Ensure token is cleared
       }
     });
 
     // Health check endpoint
-    app.get('/health', async (_req, res) => {
-      const healthStatus = await this.client.healthCheck();
-      res.json({
+    app.get('/health', async (c: Context) => {
+      const healthStatus = await this.getClient().healthCheck();
+      return c.json({
         status: 'ok',
         backend: {
           url: this.config.apiUrl,
@@ -836,30 +908,33 @@ export class GraphitiMCPServer {
           error: healthStatus.error,
         },
         server: {
-          transport: 'http',
+          transport: 'streamable-http',
           port: this.config.port,
           uptime: process.uptime(),
+          activeConnections: activeConnections,
         },
       });
     });
 
     // Debug endpoint - list tools
-    app.get('/debug/tools', (_req, res) => {
-      res.json({
+    app.get('/debug/tools', (c: Context) => {
+      return c.json({
         tools: TOOLS,
       });
     });
 
-    return new Promise<void>((resolve) => {
-      app.listen(this.config.port, this.config.host, () => {
-        this.logger.info(`MCP HTTP server listening on http://${this.config.host}:${this.config.port}`);
-        this.logger.info(`GraphiTi API: ${this.config.apiUrl}`);
-        this.logger.info('Available endpoints:');
-        this.logger.info('  POST /mcp - MCP protocol endpoint');
-        this.logger.info('  GET /health - Health check');
-        this.logger.info('  GET /debug/tools - List available tools');
-        resolve();
-      });
+    this.logger.info(`MCP HTTP server listening on http://${this.config.host}:${this.config.port}`);
+    this.logger.info(`GraphiTi API: ${this.config.apiUrl}`);
+    this.logger.info('Available endpoints:');
+    this.logger.info('  POST /mcp - MCP protocol endpoint (Streamable HTTP)');
+    this.logger.info('  GET  /health - Health check');
+    this.logger.info('  GET  /debug/tools - List available tools');
+
+    // Start server
+    serve({
+      fetch: app.fetch,
+      port: this.config.port,
+      hostname: this.config.host,
     });
   }
 }

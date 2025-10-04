@@ -9,6 +9,10 @@ from graph_service.dto import (
     Message,
     SearchQuery,
     SearchResults,
+    UpdateEntityRequest,
+    UpdateEntityResponse,
+    UpdateFactRequest,
+    UpdateFactResponse,
 )
 from graph_service.zep_graphiti import ZepGraphitiDep, get_fact_result_from_edge
 
@@ -232,4 +236,180 @@ async def get_graph_stats(group_id: str, graphiti: ZepGraphitiDep) -> Dict[str, 
         'total_communities': communities_count,
         'oldest_memory': oldest_memory.isoformat() if oldest_memory else None,
         'newest_memory': newest_memory.isoformat() if newest_memory else None,
+    }
+
+
+@router.put('/fact/{uuid}', status_code=status.HTTP_200_OK)
+async def update_fact(
+    uuid: str,
+    request: UpdateFactRequest,
+    graphiti: ZepGraphitiDep,
+) -> UpdateFactResponse:
+    """Update an existing fact/edge by UUID"""
+    from graphiti_core.edges import EntityEdge
+
+    # Get the existing edge
+    edge = await EntityEdge.get_by_uuid(graphiti.driver, uuid)
+
+    # Track which fields were updated
+    updated_fields = []
+
+    # Update fields that were provided
+    if request.fact is not None:
+        edge.fact = request.fact
+        updated_fields.append('fact')
+
+    if request.valid_at is not None:
+        edge.valid_at = request.valid_at
+        updated_fields.append('valid_at')
+
+    if request.invalid_at is not None:
+        edge.invalid_at = request.invalid_at
+        updated_fields.append('invalid_at')
+
+    if request.tags is not None:
+        edge.tags = request.tags
+        updated_fields.append('tags')
+
+    if request.priority is not None:
+        edge.priority = request.priority
+        updated_fields.append('priority')
+
+    if request.metadata is not None:
+        edge.metadata = request.metadata
+        updated_fields.append('metadata')
+
+    # Regenerate embedding if fact changed
+    if 'fact' in updated_fields:
+        await edge.generate_embedding(graphiti.embedder)
+        updated_fields.append('fact_embedding')
+
+    # Save the updated edge
+    await edge.save(graphiti.driver)
+
+    return UpdateFactResponse(
+        uuid=uuid,
+        updated_fields=updated_fields,
+        message=f'Successfully updated fact {uuid}',
+    )
+
+
+@router.put('/entity/{uuid}', status_code=status.HTTP_200_OK)
+async def update_entity(
+    uuid: str,
+    request: UpdateEntityRequest,
+    graphiti: ZepGraphitiDep,
+) -> UpdateEntityResponse:
+    """Update an existing entity by UUID"""
+    from graphiti_core.nodes import EntityNode
+
+    # Get the existing entity
+    entity = await EntityNode.get_by_uuid(graphiti.driver, uuid)
+
+    # Track which fields were updated
+    updated_fields = []
+
+    # Update fields that were provided
+    if request.name is not None:
+        entity.name = request.name
+        updated_fields.append('name')
+
+    if request.summary is not None:
+        entity.summary = request.summary
+        updated_fields.append('summary')
+
+    if request.tags is not None:
+        entity.tags = request.tags
+        updated_fields.append('tags')
+
+    if request.priority is not None:
+        entity.priority = request.priority
+        updated_fields.append('priority')
+
+    if request.metadata is not None:
+        entity.metadata = request.metadata
+        updated_fields.append('metadata')
+
+    # Regenerate embedding if name changed
+    if 'name' in updated_fields:
+        await entity.generate_name_embedding(graphiti.embedder)
+        updated_fields.append('name_embedding')
+
+    # Save the updated entity
+    await entity.save(graphiti.driver)
+
+    return UpdateEntityResponse(
+        uuid=uuid,
+        updated_fields=updated_fields,
+        message=f'Successfully updated entity {uuid}',
+    )
+
+
+@router.get('/duplicates/{group_id}', status_code=status.HTTP_200_OK)
+async def find_duplicate_entities(
+    group_id: str,
+    graphiti: ZepGraphitiDep,
+    similarity_threshold: float = Query(0.85, ge=0.0, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+) -> Dict[str, Any]:
+    """Find potential duplicate entities using semantic similarity"""
+    from graphiti_core.nodes import EntityNode
+    from graphiti_core.utils.maintenance.graph_data_operations import cosine_similarity
+
+    # Get all entities in the group
+    entities = await EntityNode.get_by_group_ids(graphiti.driver, [group_id])
+
+    # Load embeddings for all entities
+    for entity in entities:
+        await entity.load_name_embedding(graphiti.driver)
+
+    duplicates = []
+    checked_pairs = set()
+
+    # Compare each pair of entities
+    for i, entity1 in enumerate(entities):
+        if not entity1.name_embedding:
+            continue
+
+        for entity2 in entities[i + 1 :]:
+            if not entity2.name_embedding:
+                continue
+
+            # Skip if already checked
+            pair_key = tuple(sorted([entity1.uuid, entity2.uuid]))
+            if pair_key in checked_pairs:
+                continue
+            checked_pairs.add(pair_key)
+
+            # Calculate similarity
+            similarity = cosine_similarity(entity1.name_embedding, entity2.name_embedding)
+
+            if similarity >= similarity_threshold:
+                duplicates.append(
+                    {
+                        'entities': [
+                            {
+                                'uuid': entity1.uuid,
+                                'name': entity1.name,
+                                'summary': entity1.summary if hasattr(entity1, 'summary') else None,
+                            },
+                            {
+                                'uuid': entity2.uuid,
+                                'name': entity2.name,
+                                'summary': entity2.summary if hasattr(entity2, 'summary') else None,
+                            },
+                        ],
+                        'similarity': round(similarity, 4),
+                    }
+                )
+
+    # Sort by similarity (highest first) and limit
+    duplicates.sort(key=lambda x: x['similarity'], reverse=True)
+    duplicates = duplicates[:limit]
+
+    return {
+        'group_id': group_id,
+        'similarity_threshold': similarity_threshold,
+        'total_duplicates': len(duplicates),
+        'duplicates': duplicates,
     }

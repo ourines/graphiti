@@ -341,6 +341,136 @@ export class GraphitiClient {
   }
 
   /**
+   * Update an existing fact/edge
+   * PUT /fact/{uuid}
+   */
+  async updateFact(params: {
+    uuid: string;
+    fact?: string;
+    valid_at?: string;
+    invalid_at?: string;
+    tags?: string[];
+    priority?: number;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    uuid: string;
+    updated_fields: string[];
+    message: string;
+  }> {
+    this.logger.info(`Updating fact: ${params.uuid}`);
+
+    const { uuid, ...updateData } = params;
+
+    return this.fetch(`/fact/${uuid}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
+  }
+
+  /**
+   * Update an existing entity
+   * PUT /entity/{uuid}
+   */
+  async updateEntity(params: {
+    uuid: string;
+    name?: string;
+    summary?: string;
+    tags?: string[];
+    priority?: number;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    uuid: string;
+    updated_fields: string[];
+    message: string;
+  }> {
+    this.logger.info(`Updating entity: ${params.uuid}`);
+
+    const { uuid, ...updateData } = params;
+
+    return this.fetch(`/entity/${uuid}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
+  }
+
+  /**
+   * Batch add memories
+   * POST /messages with multiple messages
+   */
+  async batchAddMemories(
+    groupId: string,
+    memories: Array<{
+      name: string;
+      content: string;
+      timestamp: string;
+      role?: string;
+      source_description?: string;
+    }>
+  ): Promise<{
+    message: string;
+    job_ids: string[];
+    queue_size: number;
+  }> {
+    this.logger.info(`Batch adding ${memories.length} memories to group: ${groupId}`);
+
+    const messages = memories.map((memory) => ({
+      uuid: crypto.randomUUID(),
+      name: memory.name,
+      content: memory.content,
+      role: memory.role || 'user',
+      role_type: 'user',
+      timestamp: memory.timestamp,
+      source_description: memory.source_description || 'Batch import',
+    }));
+
+    return this.fetch('/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        group_id: groupId,
+        messages,
+      }),
+    });
+  }
+
+  /**
+   * Find duplicate entities
+   * GET /duplicates/{group_id}
+   */
+  async findDuplicateEntities(
+    groupId: string,
+    similarityThreshold?: number,
+    limit?: number
+  ): Promise<{
+    group_id: string;
+    similarity_threshold: number;
+    total_duplicates: number;
+    duplicates: Array<{
+      entities: Array<{
+        uuid: string;
+        name: string;
+        summary?: string;
+      }>;
+      similarity: number;
+    }>;
+  }> {
+    this.logger.info(`Finding duplicate entities in group: ${groupId}`);
+
+    const params = new URLSearchParams();
+    if (similarityThreshold !== undefined) {
+      params.append('similarity_threshold', similarityThreshold.toString());
+    }
+    if (limit !== undefined) {
+      params.append('limit', limit.toString());
+    }
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+
+    return this.fetch(`/duplicates/${groupId}${queryString}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
    * List all group_ids in the knowledge graph
    * GET /groups
    */

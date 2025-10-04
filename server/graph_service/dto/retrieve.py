@@ -57,3 +57,34 @@ class GetMemoryRequest(BaseModel):
 
 class GetMemoryResponse(BaseModel):
     facts: list[FactResult] = Field(..., description='The facts that were retrieved from the graph')
+
+
+class UpdateFactRequest(BaseModel):
+    uuid: str = Field(..., description='UUID of the fact to update')
+    fact: str | None = Field(None, description='New fact description')
+    valid_at: datetime | None = Field(None, description='New valid_at timestamp')
+    invalid_at: datetime | None = Field(None, description='New invalid_at timestamp')
+    tags: list[str] | None = Field(None, description='New tags list')
+    priority: int | None = Field(None, description='New priority (0-10)', ge=0, le=10)
+    metadata: dict | None = Field(None, description='New metadata')
+
+
+class UpdateFactResponse(BaseModel):
+    uuid: str
+    updated_fields: list[str]
+    message: str
+
+
+class UpdateEntityRequest(BaseModel):
+    uuid: str = Field(..., description='UUID of the entity to update')
+    name: str | None = Field(None, description='New entity name')
+    summary: str | None = Field(None, description='New entity summary')
+    tags: list[str] | None = Field(None, description='New tags list')
+    priority: int | None = Field(None, description='New priority (0-10)', ge=0, le=10)
+    metadata: dict | None = Field(None, description='New metadata')
+
+
+class UpdateEntityResponse(BaseModel):
+    uuid: str
+    updated_fields: list[str]
+    message: str

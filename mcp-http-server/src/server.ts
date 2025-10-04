@@ -301,6 +301,49 @@ function isGetContextParams(args: unknown): args is ToolInputs['get_context'] {
   return typeof args === 'object' && args !== null;
 }
 
+function isUpdateFactParams(args: unknown): args is ToolInputs['update_fact'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0
+  );
+}
+
+function isUpdateEntityParams(args: unknown): args is ToolInputs['update_entity'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0
+  );
+}
+
+function isBatchAddMemoriesParams(args: unknown): args is ToolInputs['batch_add_memories'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0 &&
+    Array.isArray(a.memories)
+  );
+}
+
+function isFindDuplicateEntitiesParams(
+  args: unknown
+): args is ToolInputs['find_duplicate_entities'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0
+  );
+}
+
 /**
  * GraphiTi MCP Server
  * Implements Model Context Protocol for GraphiTi knowledge graph
@@ -545,6 +588,42 @@ export class GraphitiMCPServer {
                 ? `Current context: ${contextState.currentGroupId}`
                 : 'No context set',
             };
+            break;
+          }
+
+          case 'update_fact': {
+            if (!isUpdateFactParams(args)) {
+              throw new Error('Invalid parameters for update_fact. Required: uuid (string), optional: fact, valid_at, invalid_at, tags, priority, metadata');
+            }
+            result = await this.client.updateFact(args);
+            break;
+          }
+
+          case 'update_entity': {
+            if (!isUpdateEntityParams(args)) {
+              throw new Error('Invalid parameters for update_entity. Required: uuid (string), optional: name, summary, tags, priority, metadata');
+            }
+            result = await this.client.updateEntity(args);
+            break;
+          }
+
+          case 'batch_add_memories': {
+            if (!isBatchAddMemoriesParams(args)) {
+              throw new Error('Invalid parameters for batch_add_memories. Required: group_id (string), memories (array)');
+            }
+            result = await this.client.batchAddMemories(args.group_id, args.memories);
+            break;
+          }
+
+          case 'find_duplicate_entities': {
+            if (!isFindDuplicateEntitiesParams(args)) {
+              throw new Error('Invalid parameters for find_duplicate_entities. Required: group_id (string), optional: similarity_threshold, limit');
+            }
+            result = await this.client.findDuplicateEntities(
+              args.group_id,
+              args.similarity_threshold,
+              args.limit
+            );
             break;
           }
 

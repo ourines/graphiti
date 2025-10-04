@@ -544,6 +544,247 @@ This helps you understand which project/workspace is currently active and will b
       required: [],
     },
   },
+
+  {
+    name: 'update_fact',
+    description: `Update an existing fact/relationship in the knowledge graph.
+
+🔧 Purpose:
+Modify properties of an existing fact without deleting and recreating it.
+
+🎯 Use cases:
+- Fix incorrect information in a fact
+- Update temporal bounds (valid_at/invalid_at) when relationships change
+- Adjust priority or add tags to existing facts
+- Correct fact descriptions while preserving the relationship structure
+
+⚠️ IMPORTANT:
+- Requires the fact's UUID (get it from search_memory or get_fact_details)
+- All fields are optional - only provide what you want to change
+- If you update the fact description, embeddings will be automatically regenerated
+- Cannot change source/target entities (delete and recreate instead)
+
+💡 Example workflow:
+1. search_memory to find the fact UUID
+2. update_fact(uuid="abc123", fact="Updated description", priority=8)`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuid: {
+          type: 'string',
+          description: 'UUID of the fact to update',
+        },
+        fact: {
+          type: 'string',
+          description: 'Optional: New fact description text',
+        },
+        valid_at: {
+          type: 'string',
+          description: 'Optional: New valid_at timestamp (ISO 8601 format)',
+        },
+        invalid_at: {
+          type: 'string',
+          description: 'Optional: New invalid_at timestamp (ISO 8601 format)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: New tags list',
+        },
+        priority: {
+          type: 'number',
+          description: 'Optional: New priority (0-10)',
+          minimum: 0,
+          maximum: 10,
+        },
+        metadata: {
+          type: 'object',
+          description: 'Optional: New metadata (arbitrary JSON object)',
+        },
+      },
+      required: ['uuid'],
+    },
+  },
+
+  {
+    name: 'update_entity',
+    description: `Update an existing entity in the knowledge graph.
+
+🔧 Purpose:
+Modify properties of an existing entity without deleting and recreating it.
+
+🎯 Use cases:
+- Correct entity names or summaries
+- Update entity metadata as information evolves
+- Adjust priority or add tags to entities
+- Fix typos or improve entity descriptions
+
+⚠️ IMPORTANT:
+- Requires the entity's UUID (get it from get_entities or search results)
+- All fields are optional - only provide what you want to change
+- If you update the name, name embeddings will be automatically regenerated
+- Changing the name doesn't affect existing relationships
+
+💡 Example workflow:
+1. get_entities(group_id="work") to find the entity UUID
+2. update_entity(uuid="xyz789", summary="Improved summary", tags=["#project", "#active"])`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuid: {
+          type: 'string',
+          description: 'UUID of the entity to update',
+        },
+        name: {
+          type: 'string',
+          description: 'Optional: New entity name',
+        },
+        summary: {
+          type: 'string',
+          description: 'Optional: New entity summary/description',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: New tags list',
+        },
+        priority: {
+          type: 'number',
+          description: 'Optional: New priority (0-10)',
+          minimum: 0,
+          maximum: 10,
+        },
+        metadata: {
+          type: 'object',
+          description: 'Optional: New metadata (arbitrary JSON object)',
+        },
+      },
+      required: ['uuid'],
+    },
+  },
+
+  {
+    name: 'batch_add_memories',
+    description: `Add multiple memories/episodes at once for efficient bulk import.
+
+🚀 Purpose:
+Efficiently add multiple memories in a single operation, ideal for:
+- Importing conversation history
+- Migrating data from other systems
+- Bulk knowledge graph population
+- Loading archived memories
+
+⚡ Performance:
+- Processes all memories asynchronously
+- More efficient than calling add_memory multiple times
+- All memories processed in parallel queue
+
+⚠️ IMPORTANT:
+- All memories must belong to the same group_id
+- Each memory requires: name, content, timestamp
+- Returns job IDs for tracking processing status
+
+💡 Example workflow:
+1. batch_add_memories with array of memories
+2. Use get_queue_status to monitor processing
+3. Search for imported memories after processing completes`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        group_id: {
+          type: 'string',
+          description: 'Group ID for all memories (e.g., "work", "personal")',
+        },
+        memories: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description: 'Short name/title for this memory',
+              },
+              content: {
+                type: 'string',
+                description: 'The content of the memory',
+              },
+              timestamp: {
+                type: 'string',
+                description: 'When this memory occurred (ISO 8601 format)',
+              },
+              role: {
+                type: 'string',
+                description: 'Optional: Role (default: user)',
+              },
+              source_description: {
+                type: 'string',
+                description: 'Optional: Description of the source',
+              },
+            },
+            required: ['name', 'content', 'timestamp'],
+          },
+          description: 'Array of memories to add',
+        },
+      },
+      required: ['group_id', 'memories'],
+    },
+  },
+
+  {
+    name: 'find_duplicate_entities',
+    description: `Detect potential duplicate entities in the knowledge graph using semantic similarity.
+
+🔍 Purpose:
+Identify entities that might represent the same real-world concept but have different names or representations.
+
+🎯 Use cases:
+- Data quality checks
+- Deduplication before merging graphs
+- Finding synonyms and aliases
+- Identifying entities that should be merged
+
+📊 Returns:
+- Groups of similar entities with similarity scores
+- Each group includes entity names, UUIDs, and similarity percentage
+- Sorted by similarity (most similar first)
+
+⚠️ Parameters:
+- group_id: The workspace to check
+- similarity_threshold: Minimum similarity (0.0-1.0, default: 0.85)
+  - 0.95+ : Near-identical (typos, case differences)
+  - 0.85-0.95 : Very similar (synonyms, abbreviations)
+  - 0.70-0.85 : Somewhat similar (related concepts)
+- limit: Maximum duplicate groups to return (default: 50)
+
+💡 Example workflow:
+1. find_duplicate_entities(group_id="work", similarity_threshold=0.9)
+2. Review suggested duplicates
+3. Use update_entity or manual merge if needed`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        group_id: {
+          type: 'string',
+          description: 'Group ID to check for duplicates',
+        },
+        similarity_threshold: {
+          type: 'number',
+          description: 'Minimum similarity score (0.0-1.0). Default: 0.85',
+          minimum: 0.0,
+          maximum: 1.0,
+          default: 0.85,
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of duplicate groups to return. Default: 50',
+          minimum: 1,
+          maximum: 200,
+          default: 50,
+        },
+      },
+      required: ['group_id'],
+    },
+  },
 ] as const;
 
 /**
@@ -616,4 +857,36 @@ export type ToolInputs = {
     group_id: string;
   };
   get_context: Record<string, never>;
+  update_fact: {
+    uuid: string;
+    fact?: string;
+    valid_at?: string;
+    invalid_at?: string;
+    tags?: string[];
+    priority?: number;
+    metadata?: Record<string, any>;
+  };
+  update_entity: {
+    uuid: string;
+    name?: string;
+    summary?: string;
+    tags?: string[];
+    priority?: number;
+    metadata?: Record<string, any>;
+  };
+  batch_add_memories: {
+    group_id: string;
+    memories: Array<{
+      name: string;
+      content: string;
+      timestamp: string;
+      role?: string;
+      source_description?: string;
+    }>;
+  };
+  find_duplicate_entities: {
+    group_id: string;
+    similarity_threshold?: number;
+    limit?: number;
+  };
 };

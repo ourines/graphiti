@@ -9,6 +9,7 @@ import type { GraphitiConfig, Logger } from './config.js';
 import { GraphitiClient } from './client.js';
 import { TOOLS, type ToolInputs } from './tools.js';
 import { ContextManager } from './context-manager.js';
+import { createAuthMiddleware } from './auth-middleware.js';
 
 /**
  * Union type for all possible tool results
@@ -344,6 +345,51 @@ function isFindDuplicateEntitiesParams(
   );
 }
 
+function isMergeEntitiesParams(args: unknown): args is ToolInputs['merge_entities'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.source_uuid === 'string' &&
+    a.source_uuid.length > 0 &&
+    typeof a.target_uuid === 'string' &&
+    a.target_uuid.length > 0
+  );
+}
+
+function isBatchDeleteParams(args: unknown): args is ToolInputs['batch_delete'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    Array.isArray(a.uuids) &&
+    a.uuids.length > 0 &&
+    a.uuids.every((uuid) => typeof uuid === 'string')
+  );
+}
+
+function isListTagsParams(args: unknown): args is ToolInputs['list_tags'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    (a.group_id === undefined || typeof a.group_id === 'string')
+  );
+}
+
+function isRenameTagParams(args: unknown): args is ToolInputs['rename_tag'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof args === 'object' &&
+    args !== null &&
+    typeof a.old_tag === 'string' &&
+    a.old_tag.length > 0 &&
+    typeof a.new_tag === 'string' &&
+    a.new_tag.length > 0 &&
+    (a.group_id === undefined || typeof a.group_id === 'string')
+  );
+}
+
 /**
  * GraphiTi MCP Server
  * Implements Model Context Protocol for GraphiTi knowledge graph
@@ -627,6 +673,38 @@ export class GraphitiMCPServer {
             break;
           }
 
+          case 'merge_entities': {
+            if (!isMergeEntitiesParams(args)) {
+              throw new Error('Invalid parameters for merge_entities. Required: source_uuid (string), target_uuid (string)');
+            }
+            result = await this.client.mergeEntities(args.source_uuid, args.target_uuid);
+            break;
+          }
+
+          case 'batch_delete': {
+            if (!isBatchDeleteParams(args)) {
+              throw new Error('Invalid parameters for batch_delete. Required: uuids (array of strings, min 1)');
+            }
+            result = await this.client.batchDelete(args.uuids);
+            break;
+          }
+
+          case 'list_tags': {
+            if (!isListTagsParams(args)) {
+              throw new Error('Invalid parameters for list_tags. Optional: group_id (string)');
+            }
+            result = await this.client.listTags(args.group_id);
+            break;
+          }
+
+          case 'rename_tag': {
+            if (!isRenameTagParams(args)) {
+              throw new Error('Invalid parameters for rename_tag. Required: old_tag (string), new_tag (string), optional: group_id (string)');
+            }
+            result = await this.client.renameTag(args.old_tag, args.new_tag, args.group_id);
+            break;
+          }
+
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -699,6 +777,18 @@ export class GraphitiMCPServer {
   async startHTTP(): Promise<void> {
     const app = express();
     app.use(express.json());
+
+    // Apply authentication middleware (MCP standard)
+    const authMiddleware = createAuthMiddleware(this.config, this.logger);
+    app.use(authMiddleware);
+
+    // Log authentication status
+    if (this.config.auth.enabled) {
+      this.logger.info(`Authentication enabled: ${this.config.auth.method} method`);
+      this.logger.info(`Public endpoints: ${this.config.auth.publicEndpoints.join(', ')}`);
+    } else {
+      this.logger.warn('⚠️  Authentication disabled - not recommended for public deployment');
+    }
 
     // MCP protocol endpoint
     app.post('/mcp', async (_req, res) => {

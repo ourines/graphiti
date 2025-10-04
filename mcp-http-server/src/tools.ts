@@ -759,7 +759,7 @@ Identify entities that might represent the same real-world concept but have diff
 💡 Example workflow:
 1. find_duplicate_entities(group_id="work", similarity_threshold=0.9)
 2. Review suggested duplicates
-3. Use update_entity or manual merge if needed`,
+3. Use merge_entities to combine duplicates`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -783,6 +783,172 @@ Identify entities that might represent the same real-world concept but have diff
         },
       },
       required: ['group_id'],
+    },
+  },
+
+  {
+    name: 'merge_entities',
+    description: `Merge two duplicate entities into one, combining all their relationships.
+
+🔧 Purpose:
+Consolidate duplicate entities by transferring all relationships from the source entity to the target entity, then deleting the source.
+
+🎯 Use cases:
+- Clean up duplicates found by find_duplicate_entities
+- Merge entities with different spellings ("NYC" + "New York City")
+- Consolidate synonyms or aliases
+- Fix entity extraction errors
+
+⚠️ IMPORTANT:
+- This operation is IRREVERSIBLE
+- The source entity will be DELETED after merge
+- All facts/relationships will point to the target entity
+- The target entity's information is preserved
+- The source entity's relationships are transferred
+
+💡 Workflow:
+1. Use find_duplicate_entities to identify duplicates
+2. Review the entities to confirm they should be merged
+3. Choose which entity to keep as target (usually the one with better name/summary)
+4. Execute merge_entities(source_uuid, target_uuid)
+
+📊 Returns:
+- Success message with count of transferred relationships
+- Error if either entity doesn't exist`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source_uuid: {
+          type: 'string',
+          description: 'UUID of the entity to merge FROM (will be deleted)',
+        },
+        target_uuid: {
+          type: 'string',
+          description: 'UUID of the entity to merge INTO (will be kept)',
+        },
+      },
+      required: ['source_uuid', 'target_uuid'],
+    },
+  },
+
+  {
+    name: 'batch_delete',
+    description: `Delete multiple nodes (entities, episodes, or facts) in a single operation.
+
+🚀 Purpose:
+Efficiently delete multiple nodes at once instead of calling delete operations individually.
+
+🎯 Use cases:
+- Clean up test data
+- Remove multiple duplicate entities after review
+- Delete batches of outdated episodes
+- Mass cleanup operations
+
+⚠️ IMPORTANT:
+- This operation is IRREVERSIBLE
+- Can delete any combination of entities, episodes, and facts
+- All relationships will be cleaned up automatically
+- More efficient than individual deletes
+
+💡 Workflow:
+1. Collect UUIDs of nodes to delete (from search, get_entities, etc.)
+2. Review the list to ensure you're deleting the right nodes
+3. Execute batch_delete with the UUID list
+
+📊 Example:
+batch_delete(uuids=["uuid1", "uuid2", "uuid3"])`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of node UUIDs to delete. Can include entities, episodes, or facts.',
+          minItems: 1,
+        },
+      },
+      required: ['uuids'],
+    },
+  },
+
+  {
+    name: 'list_tags',
+    description: `List all unique tags/labels used in the knowledge graph.
+
+🔍 Purpose:
+Discover what tags are being used across your knowledge graph for categorization.
+
+🎯 Use cases:
+- Explore available tags before filtering
+- Audit tag usage across your knowledge base
+- Find inconsistent tag naming (e.g., "Python" vs "python")
+- Understand how your knowledge is categorized
+
+📊 Returns:
+- tags: List of all unique tag strings
+- count: Total number of unique tags
+- entity_tags: Tags used on entities
+- message: Summary message
+
+💡 Example workflow:
+1. list_tags(group_id="work") → See all tags in work context
+2. Find inconsistencies like "JavaScript" and "Javascript"
+3. Use rename_tag to standardize naming`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        group_id: {
+          type: 'string',
+          description: 'Optional: Filter tags by group. If omitted, returns tags from all groups.',
+        },
+      },
+      required: [],
+    },
+  },
+
+  {
+    name: 'rename_tag',
+    description: `Rename a tag across all entities in the knowledge graph.
+
+🔧 Purpose:
+Standardize tag naming by renaming a tag everywhere it's used.
+
+🎯 Use cases:
+- Fix typos in tags ("Pyton" → "Python")
+- Standardize capitalization ("javascript" → "JavaScript")
+- Consolidate similar tags ("#AI" → "#ArtificialIntelligence")
+- Rename project/category tags
+
+⚠️ IMPORTANT:
+- Updates ALL entities with the old tag
+- Operation is immediate and affects all matching entities
+- Can be scoped to a specific group_id or applied globally
+
+💡 Workflow:
+1. list_tags() → Find tags that need renaming
+2. rename_tag(old_tag="Javascript", new_tag="JavaScript")
+3. list_tags() → Verify the rename was successful
+
+📊 Returns:
+- Success message with count of updated entities
+- If no entities have the tag, count will be 0`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        old_tag: {
+          type: 'string',
+          description: 'The current tag name to replace',
+        },
+        new_tag: {
+          type: 'string',
+          description: 'The new tag name',
+        },
+        group_id: {
+          type: 'string',
+          description: 'Optional: Limit rename to this group. If omitted, renames across all groups.',
+        },
+      },
+      required: ['old_tag', 'new_tag'],
     },
   },
 ] as const;
@@ -888,5 +1054,20 @@ export type ToolInputs = {
     group_id: string;
     similarity_threshold?: number;
     limit?: number;
+  };
+  merge_entities: {
+    source_uuid: string;
+    target_uuid: string;
+  };
+  batch_delete: {
+    uuids: string[];
+  };
+  list_tags: {
+    group_id?: string;
+  };
+  rename_tag: {
+    old_tag: string;
+    new_tag: string;
+    group_id?: string;
   };
 };

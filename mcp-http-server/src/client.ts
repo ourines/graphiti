@@ -608,6 +608,77 @@ export class GraphitiClient {
   }
 
   /**
+   * Merge two entities into one
+   * POST /entity/merge
+   */
+  async mergeEntities(
+    sourceUuid: string,
+    targetUuid: string
+  ): Promise<{ message: string; success: boolean }> {
+    this.logger.info(`Merging entity ${sourceUuid} into ${targetUuid}`);
+
+    return this.fetch('/entity/merge', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_uuid: sourceUuid,
+        target_uuid: targetUuid,
+      }),
+    });
+  }
+
+  /**
+   * Batch delete multiple nodes (entities, episodes, facts)
+   * POST /batch/delete
+   */
+  async batchDelete(uuids: string[]): Promise<{ message: string; success: boolean }> {
+    this.logger.info(`Batch deleting ${uuids.length} nodes`);
+
+    return this.fetch('/batch/delete', {
+      method: 'POST',
+      body: JSON.stringify({ uuids }),
+    });
+  }
+
+  /**
+   * List all unique tags/labels in the knowledge graph
+   * GET /tags
+   */
+  async listTags(groupId?: string): Promise<{
+    tags: string[];
+    count: number;
+    entity_tags: string[];
+    message: string;
+  }> {
+    const queryParams = groupId ? `?group_id=${encodeURIComponent(groupId)}` : '';
+    this.logger.info(`Listing tags${groupId ? ` for group ${groupId}` : ''}`);
+
+    return this.fetch(`/tags${queryParams}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Rename a tag across all entities
+   * POST /tags/rename
+   */
+  async renameTag(
+    oldTag: string,
+    newTag: string,
+    groupId?: string
+  ): Promise<{ message: string; success: boolean }> {
+    this.logger.info(`Renaming tag "${oldTag}" to "${newTag}"${groupId ? ` in group ${groupId}` : ''}`);
+
+    return this.fetch('/tags/rename', {
+      method: 'POST',
+      body: JSON.stringify({
+        old_tag: oldTag,
+        new_tag: newTag,
+        group_id: groupId,
+      }),
+    });
+  }
+
+  /**
    * Health check - verify API is reachable
    */
   async healthCheck(): Promise<{ healthy: boolean; error?: string; latency?: number }> {

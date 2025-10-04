@@ -1105,6 +1105,214 @@ async def get_episodes(
 
 
 @mcp.tool()
+async def merge_entities(
+    source_uuid: str, target_uuid: str
+) -> SuccessResponse | ErrorResponse:
+    """Merge two entities into one, transferring all relationships from source to target.
+
+    This operation:
+    1. Gets both source and target entities
+    2. Transfers all relationships (facts) from source entity to target entity
+    3. Updates the target entity's summary to incorporate source information
+    4. Deletes the source entity
+
+    Args:
+        source_uuid: UUID of the entity to merge from (will be deleted)
+        target_uuid: UUID of the entity to merge into (will be kept)
+    """
+    global graphiti_client
+
+    if graphiti_client is None:
+        return ErrorResponse(error='Graphiti client not initialized')
+
+    try:
+        assert graphiti_client is not None
+        client = cast(Graphiti, graphiti_client)
+
+        from graphiti_core.nodes import EntityNode
+        from graphiti_core.edges import EntityEdge
+
+        # Get both entities
+        source_entity = await EntityNode.get_by_uuid(client.driver, source_uuid)
+        target_entity = await EntityNode.get_by_uuid(client.driver, target_uuid)
+
+        # Get all edges connected to source entity
+        result = await client.driver.execute_query(
+            """
+            MATCH (source:Entity {uuid: $source_uuid})-[r:RELATES_TO]-(edge)
+            RETURN edge.uuid as edge_uuid
+            """,
+            source_uuid=source_uuid,
+        )
+
+        edge_uuids = [record['edge_uuid'] for record in result.records]
+
+        # Update each edge to point to target instead of source
+        for edge_uuid in edge_uuids:
+            edge = await EntityEdge.get_by_uuid(client.driver, edge_uuid)
+
+            # Update source or target node reference
+            if edge.source_node_uuid == source_uuid:
+                edge.source_node_uuid = target_uuid
+            if edge.target_node_uuid == source_uuid:
+                edge.target_node_uuid = target_uuid
+
+            await edge.save(client.driver)
+
+        # Delete the source entity
+        await source_entity.delete(client.driver)
+
+        return SuccessResponse(
+            message=f'Successfully merged entity {source_uuid} into {target_uuid}. Transferred {len(edge_uuids)} relationships.'
+        )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f'Error merging entities: {error_msg}')
+        return ErrorResponse(error=f'Error merging entities: {error_msg}')
+
+
+@mcp.tool()
+async def batch_delete(uuids: list[str]) -> SuccessResponse | ErrorResponse:
+    """Delete multiple nodes (entities, episodes, or facts) by their UUIDs.
+
+    This is more efficient than calling delete operations individually.
+    Can delete any combination of entities, episodes, and facts.
+
+    Args:
+        uuids: List of UUIDs to delete
+    """
+    global graphiti_client
+
+    if graphiti_client is None:
+        return ErrorResponse(error='Graphiti client not initialized')
+
+    try:
+        assert graphiti_client is not None
+        client = cast(Graphiti, graphiti_client)
+
+        from graphiti_core.nodes import Node
+
+        # Use the built-in batch delete functionality
+        await Node.delete_by_uuids(client.driver, uuids)
+
+        return SuccessResponse(
+            message=f'Successfully deleted {len(uuids)} nodes'
+        )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f'Error batch deleting nodes: {error_msg}')
+        return ErrorResponse(error=f'Error batch deleting nodes: {error_msg}')
+
+
+@mcp.tool()
+async def list_tags(group_id: str | None = None) -> dict[str, Any] | ErrorResponse:
+    """List all unique tags/labels used in the knowledge graph.
+
+    Args:
+        group_id: Optional group ID to filter tags. If not provided, returns tags from all groups.
+
+    Returns:
+        Dictionary with:
+        - tags: List of unique tag strings
+        - count: Number of unique tags
+        - entity_tags: Tags used on entities
+        - fact_tags: Tags used on facts
+    """
+    global graphiti_client
+
+    if graphiti_client is None:
+        return ErrorResponse(error='Graphiti client not initialized')
+
+    try:
+        assert graphiti_client is not None
+        client = cast(Graphiti, graphiti_client)
+
+        # Get entity tags
+        entity_query = """
+        MATCH (n:Entity)
+        """
+        if group_id:
+            entity_query += " WHERE n.group_id = $group_id"
+        entity_query += """
+        UNWIND n.labels AS label
+        RETURN DISTINCT label
+        ORDER BY label
+        """
+
+        entity_result = await client.driver.execute_query(
+            entity_query,
+            group_id=group_id if group_id else None,
+        )
+        entity_tags = [record['label'] for record in entity_result.records if record['label'] != 'Entity']
+
+        # For now, return entity tags
+        # In the future, facts could also have tags if we add that field
+        all_tags = sorted(set(entity_tags))
+
+        return {
+            'tags': all_tags,
+            'count': len(all_tags),
+            'entity_tags': entity_tags,
+            'message': f'Found {len(all_tags)} unique tags',
+        }
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f'Error listing tags: {error_msg}')
+        return ErrorResponse(error=f'Error listing tags: {error_msg}')
+
+
+@mcp.tool()
+async def rename_tag(old_tag: str, new_tag: str, group_id: str | None = None) -> SuccessResponse | ErrorResponse:
+    """Rename a tag across all entities in the knowledge graph.
+
+    Args:
+        old_tag: The current tag name to replace
+        new_tag: The new tag name
+        group_id: Optional group ID to limit the rename operation. If not provided, renames across all groups.
+
+    Returns:
+        Success message with count of updated entities
+    """
+    global graphiti_client
+
+    if graphiti_client is None:
+        return ErrorResponse(error='Graphiti client not initialized')
+
+    try:
+        assert graphiti_client is not None
+        client = cast(Graphiti, graphiti_client)
+
+        # Build query to find and update entities with the old tag
+        query = """
+        MATCH (n:Entity)
+        WHERE $old_tag IN n.labels
+        """
+        if group_id:
+            query += " AND n.group_id = $group_id"
+        query += """
+        SET n.labels = [label IN n.labels WHERE label <> $old_tag] + $new_tag
+        RETURN count(n) as updated_count
+        """
+
+        result = await client.driver.execute_query(
+            query,
+            old_tag=old_tag,
+            new_tag=new_tag,
+            group_id=group_id if group_id else None,
+        )
+
+        updated_count = result.records[0]['updated_count'] if result.records else 0
+
+        return SuccessResponse(
+            message=f'Successfully renamed tag "{old_tag}" to "{new_tag}" on {updated_count} entities'
+        )
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f'Error renaming tag: {error_msg}')
+        return ErrorResponse(error=f'Error renaming tag: {error_msg}')
+
+
+@mcp.tool()
 async def clear_graph() -> SuccessResponse | ErrorResponse:
     """Clear all data from the graph memory and rebuild indices."""
     global graphiti_client

@@ -56,12 +56,8 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
 
-      # API 认证配置（公网部署必须启用）
-      - API_AUTH_ENABLED=${API_AUTH_ENABLED:-false}
-      - API_AUTH_METHOD=${API_AUTH_METHOD:-bearer}
-      - API_AUTH_BEARER_TOKEN=${API_AUTH_BEARER_TOKEN}
-      - API_AUTH_API_KEY=${API_AUTH_API_KEY}
-      - API_AUTH_PUBLIC_ENDPOINTS=${API_AUTH_PUBLIC_ENDPOINTS:-/healthcheck,/docs,/openapi.json}
+      # API 认证（可选，留空则不启用认证）
+      - GRAPHITI_API_TOKEN=${GRAPHITI_API_TOKEN}
     depends_on:
       neo4j:
         condition: service_healthy

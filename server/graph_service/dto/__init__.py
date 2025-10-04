@@ -1,5 +1,5 @@
 from .common import Message, Result
-from .ingest import AddEntityNodeRequest, AddMessagesRequest
+from .ingest import AddEntityNodeRequest, AddMessagesRequest, BatchDeleteRequest
 from .retrieve import (
     FactResult,
     GetMemoryRequest,
@@ -17,6 +17,7 @@ __all__ = [
     'Message',
     'AddMessagesRequest',
     'AddEntityNodeRequest',
+    'BatchDeleteRequest',
     'SearchResults',
     'FactResult',
     'Result',

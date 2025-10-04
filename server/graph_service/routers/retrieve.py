@@ -361,7 +361,11 @@ async def find_duplicate_entities(
 
     # Load embeddings for all entities
     for entity in entities:
-        await entity.load_name_embedding(graphiti.driver)
+        try:
+            await entity.load_name_embedding(graphiti.driver)
+        except Exception as e:
+            # Skip entities without embeddings
+            continue
 
     duplicates = []
     checked_pairs = set()
@@ -382,7 +386,11 @@ async def find_duplicate_entities(
             checked_pairs.add(pair_key)
 
             # Calculate similarity
-            similarity = cosine_similarity(entity1.name_embedding, entity2.name_embedding)
+            try:
+                similarity = cosine_similarity(entity1.name_embedding, entity2.name_embedding)
+            except Exception as e:
+                # Skip if similarity calculation fails
+                continue
 
             if similarity >= similarity_threshold:
                 duplicates.append(

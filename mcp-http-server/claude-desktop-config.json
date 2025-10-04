@@ -7,7 +7,7 @@
       ],
       "env": {
         "GRAPHITI_API_URL": "http://127.0.0.1:8000",
-        "GRAPHITI_API_TOKEN": "your-token-here"
+        "GRAPHITI_API_TOKEN": "b0a9e326c811055900fd343403bfeb408c451109f439176863d9da2c6285e84e"
       }
     }
   }

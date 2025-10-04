@@ -18,11 +18,10 @@ async def lifespan(_: FastAPI):
     await initialize_graphiti(settings)
 
     # Log authentication status
-    if settings.api_auth_enabled:
-        logger.info(f"🔒 API Authentication enabled: {settings.api_auth_method} method")
-        logger.info(f"📋 Public endpoints: {settings.api_auth_public_endpoints}")
+    if settings.graphiti_api_token:
+        logger.info('🔒 API Authentication enabled')
     else:
-        logger.warning("⚠️  API Authentication disabled - not recommended for public deployment")
+        logger.warning('⚠️  API Authentication disabled - not recommended for public deployment')
 
     yield
     # Shutdown

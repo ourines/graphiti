@@ -47,9 +47,9 @@
 export NEO4J_PASSWORD=$(openssl rand -base64 24)
 echo "NEO4J_PASSWORD=$NEO4J_PASSWORD"
 
-# 生成 API Bearer Token
-export API_AUTH_BEARER_TOKEN=$(openssl rand -hex 32)
-echo "API_AUTH_BEARER_TOKEN=$API_AUTH_BEARER_TOKEN"
+# 生成 API Token
+export GRAPHITI_API_TOKEN=$(openssl rand -hex 32)
+echo "GRAPHITI_API_TOKEN=$GRAPHITI_API_TOKEN"
 ```
 
 ### 2. 配置环境变量
@@ -71,9 +71,7 @@ LLM_PROVIDER=gemini
 GOOGLE_API_KEY=<你的 Gemini API Key>
 
 # 🔒 API 认证（公网必须启用）
-API_AUTH_ENABLED=true
-API_AUTH_METHOD=bearer
-API_AUTH_BEARER_TOKEN=<上面生成的 token>
+GRAPHITI_API_TOKEN=<上面生成的 token>
 ```
 
 ### 3. 启动服务
@@ -88,8 +86,7 @@ docker-compose logs graphiti-api
 
 你应该看到：
 ```
-🔒 API Authentication enabled: bearer method
-📋 Public endpoints: /healthcheck,/docs,/openapi.json
+🔒 API Authentication enabled
 ```
 
 ### 4. 测试认证
@@ -140,20 +137,13 @@ api.your-domain.com {
 
 ## 🔒 安全配置
 
-### 认证方法选择
+### 认证方式
 
-#### Bearer Token（推荐）
-
-**优点：**
-- ✅ OAuth 2.1 标准
-- ✅ 更安全
-- ✅ 支持 token 过期和刷新
+使用 Bearer Token 认证（OAuth 2.1 标准）。
 
 **配置：**
 ```bash
-API_AUTH_ENABLED=true
-API_AUTH_METHOD=bearer
-API_AUTH_BEARER_TOKEN=<32字节十六进制>
+GRAPHITI_API_TOKEN=<32字节十六进制>
 ```
 
 **客户端使用：**
@@ -161,39 +151,12 @@ API_AUTH_BEARER_TOKEN=<32字节十六进制>
 curl -H "Authorization: Bearer your-token" https://api.example.com/endpoint
 ```
 
-#### API Key（简化版）
-
-**优点：**
-- ✅ 配置简单
-- ✅ 易于理解
-
-**缺点：**
-- ❌ 不支持过期
-- ❌ 不是标准协议
-
-**配置：**
-```bash
-API_AUTH_ENABLED=true
-API_AUTH_METHOD=apikey
-API_AUTH_API_KEY=<32字节十六进制>
-```
-
-**客户端使用：**
-```bash
-curl -H "X-API-Key: your-key" https://api.example.com/endpoint
-```
-
-### 公共端点配置
+### 公共端点
 
 默认公共端点（无需认证）：
 - `/healthcheck` - 健康检查
 - `/docs` - Swagger UI
 - `/openapi.json` - OpenAPI 规范
-
-自定义公共端点：
-```bash
-API_AUTH_PUBLIC_ENDPOINTS=/healthcheck,/docs,/openapi.json,/metrics
-```
 
 ## 💻 客户端配置
 
@@ -205,11 +168,8 @@ API_AUTH_PUBLIC_ENDPOINTS=/healthcheck,/docs,/openapi.json,/metrics
 # API 地址（使用 HTTPS）
 GRAPHITI_API_URL=https://api.your-domain.com
 
-# 认证 Header（与服务器的 API_AUTH_BEARER_TOKEN 一致）
-GRAPHITI_API_HEADERS={"Authorization":"Bearer your-secure-bearer-token"}
-
-# 或使用简化格式
-# GRAPHITI_API_HEADERS=Authorization:Bearer your-secure-bearer-token
+# 认证 Token（与服务器的 GRAPHITI_API_TOKEN 一致）
+GRAPHITI_API_TOKEN=your-secure-token
 ```
 
 ### Python 客户端示例
@@ -281,7 +241,7 @@ console.log(data);
 
 **解决：**
 - 检查 token 是否与服务器配置一致
-- 确认 `.env` 文件中的 `API_AUTH_BEARER_TOKEN`
+- 确认 `.env` 文件中的 `GRAPHITI_API_TOKEN`
 - 重启服务加载新配置：`docker-compose restart graphiti-api`
 
 ### 问题 3: 认证未启用
@@ -293,7 +253,7 @@ console.log(data);
 ```
 
 **解决：**
-- 确认 `.env` 中设置了 `API_AUTH_ENABLED=true`
+- 确认 `.env` 中设置了 `GRAPHITI_API_TOKEN`
 - 重启服务：`docker-compose restart graphiti-api`
 
 ### 问题 4: CORS 错误
@@ -342,7 +302,7 @@ curl https://api.your-domain.com/healthcheck
 
 ### 部署前检查清单
 
-- [ ] ✅ `API_AUTH_ENABLED=true`
+- [ ] ✅ `GRAPHITI_API_TOKEN` 已设置
 - [ ] ✅ 使用 `openssl rand -hex 32` 生成 token
 - [ ] ✅ 使用 HTTPS（不要用 HTTP）
 - [ ] ✅ Neo4j 端口仅本地访问（127.0.0.1）

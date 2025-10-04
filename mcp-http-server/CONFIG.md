@@ -60,7 +60,7 @@ GRAPHITI_API_TOKEN=your-token-here
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `GRAPHITI_API_URL` | ✅ Yes | GraphiTi API server URL | `http://127.0.0.1:8000` |
-| `GRAPHITI_API_TOKEN` | ⚠️ If auth enabled | Auth token (matches server's `API_AUTH_BEARER_TOKEN`) | `abc123...` |
+| `GRAPHITI_API_TOKEN` | ⚠️ If auth enabled | Auth token (matches server's `GRAPHITI_API_TOKEN`) | `abc123...` |
 
 ## Optional Settings
 
@@ -128,8 +128,8 @@ GRAPHITI_API_TOKEN=your-token-here
 - ✅ Ensure GraphiTi server is running (`docker-compose up`)
 
 ### "Invalid token" error
-- ✅ Check `GRAPHITI_API_TOKEN` matches server's `API_AUTH_BEARER_TOKEN`
-- ✅ Ensure server has `API_AUTH_ENABLED=true`
+- ✅ Check `GRAPHITI_API_TOKEN` matches server's `GRAPHITI_API_TOKEN`
+- ✅ Ensure server has `GRAPHITI_API_TOKEN` set
 
 ### "No results found" error
 - ✅ Use `list_groups` to see available projects

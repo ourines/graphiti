@@ -38,8 +38,7 @@
 ```bash
 NEO4J_PASSWORD=secure-password
 GOOGLE_API_KEY=your-api-key
-API_AUTH_ENABLED=true
-API_AUTH_BEARER_TOKEN=abc123...
+GRAPHITI_API_TOKEN=abc123...
 ```
 
 **When**: Configure BEFORE running `docker-compose up`
@@ -88,14 +87,13 @@ GRAPHITI_API_TOKEN=your-token-here
 
 ## 🔗 Connecting Client to Server
 
-The `GRAPHITI_API_TOKEN` (client) **must match** `API_AUTH_BEARER_TOKEN` (server).
+The `GRAPHITI_API_TOKEN` (client) **must match** `GRAPHITI_API_TOKEN` (server).
 
 **Example**:
 
 1. **Server** (`.env` in root):
    ```bash
-   API_AUTH_ENABLED=true
-   API_AUTH_BEARER_TOKEN=mysecrettoken123
+   GRAPHITI_API_TOKEN=mysecrettoken123
    ```
 
 2. **Client** (Claude Desktop config):
@@ -164,7 +162,7 @@ npm run build
 
 **Q: Where does `GRAPHITI_API_TOKEN` come from?**
 - You generate it: `openssl rand -hex 32`
-- Set it in server's `API_AUTH_BEARER_TOKEN`
+- Set it in server's `GRAPHITI_API_TOKEN`
 - Use the same value in client's `GRAPHITI_API_TOKEN`
 
 ---

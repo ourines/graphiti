@@ -24,6 +24,15 @@ export interface GraphitiConfig {
 
   // Timeouts
   requestTimeout: number;
+
+  // Authentication (MCP Standard)
+  auth: {
+    enabled: boolean;
+    method: 'bearer' | 'apikey';
+    bearerToken?: string;
+    apiKey?: string;
+    publicEndpoints: string[];
+  };
 }
 
 /**
@@ -101,12 +110,35 @@ function validateConfig(config: GraphitiConfig): void {
       `Invalid GRAPHITI_REQUEST_TIMEOUT: ${config.requestTimeout}. Must be between 1000 and 300000 (1s to 5min)`
     );
   }
+
+  // Validate authentication
+  if (config.auth.enabled) {
+    if (!['bearer', 'apikey'].includes(config.auth.method)) {
+      throw new Error(
+        `Invalid MCP_AUTH_METHOD: ${config.auth.method}. Must be 'bearer' or 'apikey'`
+      );
+    }
+
+    if (config.auth.method === 'bearer' && !config.auth.bearerToken) {
+      throw new Error('MCP_AUTH_BEARER_TOKEN is required when MCP_AUTH_ENABLED=true and MCP_AUTH_METHOD=bearer');
+    }
+
+    if (config.auth.method === 'apikey' && !config.auth.apiKey) {
+      throw new Error('MCP_AUTH_API_KEY is required when MCP_AUTH_ENABLED=true and MCP_AUTH_METHOD=apikey');
+    }
+  }
 }
 
 /**
  * Load configuration from environment variables
  */
 export function loadConfig(): GraphitiConfig {
+  const authEnabled = process.env.MCP_AUTH_ENABLED?.toLowerCase() === 'true';
+  const authMethod = (process.env.MCP_AUTH_METHOD || 'bearer') as 'bearer' | 'apikey';
+  const publicEndpoints = process.env.MCP_AUTH_PUBLIC_ENDPOINTS
+    ? process.env.MCP_AUTH_PUBLIC_ENDPOINTS.split(',').map(e => e.trim())
+    : ['/health', '/status'];
+
   const config: GraphitiConfig = {
     // MCP Server
     port: parseInt(process.env.MCP_PORT || '3000', 10),
@@ -125,6 +157,15 @@ export function loadConfig(): GraphitiConfig {
 
     // Timeout
     requestTimeout: parseInt(process.env.GRAPHITI_REQUEST_TIMEOUT || '30000', 10),
+
+    // Authentication
+    auth: {
+      enabled: authEnabled,
+      method: authMethod,
+      bearerToken: process.env.MCP_AUTH_BEARER_TOKEN,
+      apiKey: process.env.MCP_AUTH_API_KEY,
+      publicEndpoints,
+    },
   };
 
   validateConfig(config);

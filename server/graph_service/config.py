@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     neo4j_user: str
     neo4j_password: str
 
+    # API Authentication settings (for public deployment)
+    api_auth_enabled: bool = Field(False, description='Enable API authentication')
+    api_auth_method: str = Field('bearer', description='Auth method: bearer or apikey')
+    api_auth_bearer_token: str | None = Field(None, description='Bearer token for authentication')
+    api_auth_api_key: str | None = Field(None, description='API key for authentication')
+    api_auth_public_endpoints: str = Field('/healthcheck,/docs,/openapi.json', description='Comma-separated public endpoints')
+
     model_config = SettingsConfigDict(
         extra='ignore',
         # Docker 容器中从环境变量读取，不需要 .env 文件

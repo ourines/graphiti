@@ -1,5 +1,8 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+
+from graphiti_core.edges import EntityEdge
+from graphiti_core.nodes import EntityNode
 
 from graph_service.zep_graphiti import ZepGraphitiDep
 
@@ -179,3 +182,97 @@ async def get_entity_neighbors(
         'neighbors': neighbors,
         'total': len(neighbors),
     }
+
+
+# ==================== Entity Merge ====================
+
+
+class MergeEntitiesRequest(BaseModel):
+    """Request to merge two entities"""
+
+    source_uuid: str = Field(..., description='UUID of entity to merge from (will be deleted)')
+    target_uuid: str = Field(..., description='UUID of entity to merge into (will be kept)')
+
+
+class MergeEntitiesResponse(BaseModel):
+    """Response from merge entities operation"""
+
+    message: str
+    success: bool
+    transferred_relationships: int = Field(..., description='Number of relationships transferred')
+
+
+@router.post('/merge', status_code=status.HTTP_200_OK)
+async def merge_entities(
+    request: MergeEntitiesRequest,
+    graphiti: ZepGraphitiDep,
+) -> MergeEntitiesResponse:
+    """
+    Merge two entities into one, transferring all relationships.
+
+    This operation:
+    1. Gets both source and target entities
+    2. Transfers all relationships from source to target
+    3. Deletes the source entity
+
+    **Warning**: This operation is irreversible!
+    """
+    try:
+        # Get both entities
+        source_entity = await EntityNode.get_by_uuid(graphiti.driver, request.source_uuid)
+        target_entity = await EntityNode.get_by_uuid(graphiti.driver, request.target_uuid)
+
+        if not source_entity:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f'Source entity {request.source_uuid} not found',
+            )
+
+        if not target_entity:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f'Target entity {request.target_uuid} not found',
+            )
+
+        # Get all edges connected to source entity
+        result = await graphiti.driver.execute_query(
+            """
+            MATCH (source:Entity {uuid: $source_uuid})-[r:RELATES_TO]-(edge)
+            RETURN edge.uuid as edge_uuid
+            """,
+            source_uuid=request.source_uuid,
+        )
+
+        edge_uuids = [record['edge_uuid'] for record in result.records]
+
+        # Update each edge to point to target instead of source
+        for edge_uuid in edge_uuids:
+            edge = await EntityEdge.get_by_uuid(graphiti.driver, edge_uuid)
+
+            if not edge:
+                continue
+
+            # Update source or target node reference
+            if edge.source_node_uuid == request.source_uuid:
+                edge.source_node_uuid = request.target_uuid
+            if edge.target_node_uuid == request.source_uuid:
+                edge.target_node_uuid = request.target_uuid
+
+            await edge.save(graphiti.driver)
+
+        # Delete the source entity
+        await source_entity.delete(graphiti.driver)
+
+        return MergeEntitiesResponse(
+            message=f'Successfully merged entity {request.source_uuid} into {request.target_uuid}',
+            success=True,
+            transferred_relationships=len(edge_uuids),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'Error merging entities: {str(e)}',
+        )

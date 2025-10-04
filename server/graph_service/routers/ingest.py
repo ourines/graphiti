@@ -7,7 +7,7 @@ from functools import partial
 from typing import Any, Deque, Dict
 
 from fastapi import APIRouter, FastAPI, status
-from graphiti_core.nodes import EpisodeType  # type: ignore
+from graphiti_core.nodes import EpisodeType, Node  # type: ignore
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data  # type: ignore
 
 from graph_service.config import get_settings
@@ -246,3 +246,25 @@ async def clear(
     await clear_data(graphiti.driver)
     await graphiti.build_indices_and_constraints()
     return Result(message='Graph cleared', success=True)
+
+
+@router.post('/batch-delete', status_code=status.HTTP_200_OK)
+async def batch_delete(
+    uuids: list[str],
+    graphiti: ZepGraphitiDep,
+):
+    """
+    Delete multiple nodes (entities, episodes, facts) in a single operation.
+
+    More efficient than individual delete operations.
+    Can delete any combination of entities, episodes, and facts.
+
+    **Warning**: This operation is irreversible!
+    """
+    # Use the built-in batch delete functionality
+    await Node.delete_by_uuids(graphiti.driver, uuids)
+
+    return Result(
+        message=f'Successfully deleted {len(uuids)} nodes',
+        success=True,
+    )

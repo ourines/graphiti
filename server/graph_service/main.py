@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from graph_service.config import get_settings
-from graph_service.routers import ingest, relationships, retrieve
+from graph_service.routers import ingest, relationships, retrieve, tags
 from graph_service.zep_graphiti import initialize_graphiti
 from graph_service.auth_middleware import AuthMiddleware
 
@@ -38,6 +38,7 @@ app.add_middleware(AuthMiddleware, settings=settings)
 app.include_router(retrieve.router)
 app.include_router(ingest.router)
 app.include_router(relationships.router)
+app.include_router(tags.router)
 
 
 @app.get('/healthcheck')

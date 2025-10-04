@@ -609,7 +609,7 @@ export class GraphitiClient {
 
   /**
    * Merge two entities into one
-   * POST /entity/merge
+   * POST /relationships/merge
    */
   async mergeEntities(
     sourceUuid: string,
@@ -617,7 +617,7 @@ export class GraphitiClient {
   ): Promise<{ message: string; success: boolean }> {
     this.logger.info(`Merging entity ${sourceUuid} into ${targetUuid}`);
 
-    return this.fetch('/entity/merge', {
+    return this.fetch('/relationships/merge', {
       method: 'POST',
       body: JSON.stringify({
         source_uuid: sourceUuid,
@@ -628,14 +628,14 @@ export class GraphitiClient {
 
   /**
    * Batch delete multiple nodes (entities, episodes, facts)
-   * POST /batch/delete
+   * POST /ingest/batch-delete
    */
   async batchDelete(uuids: string[]): Promise<{ message: string; success: boolean }> {
     this.logger.info(`Batch deleting ${uuids.length} nodes`);
 
-    return this.fetch('/batch/delete', {
+    return this.fetch('/ingest/batch-delete', {
       method: 'POST',
-      body: JSON.stringify({ uuids }),
+      body: JSON.stringify(uuids),
     });
   }
 

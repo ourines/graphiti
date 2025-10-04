@@ -27,7 +27,67 @@ type ToolResult =
       name: string;
       content: string;
       created_at: string;
-    }>;
+    }>
+  | {
+      queue_size: number;
+      current_job: {
+        job_id: string;
+        job_type: string;
+        started_at: string;
+        completed_at: string | null;
+        status: string;
+        error: string | null;
+        retry_count: number;
+      } | null;
+      recent_jobs: Array<{
+        job_id: string;
+        job_type: string;
+        started_at: string;
+        completed_at: string | null;
+        status: string;
+        error: string | null;
+        retry_count: number;
+      }>;
+    }
+  | {
+      [key: string]: any;
+      uuid: string;
+      fact: string;
+      valid_at: string;
+      invalid_at: string | null;
+    }
+  | { group_ids: string[] }
+  | {
+      group_id: string;
+      count: number;
+      limit: number;
+      entities: Array<{
+        uuid: string;
+        name: string;
+        group_id: string;
+        summary: string | null;
+        created_at: string | null;
+      }>;
+    }
+  | {
+      entity_uuid: string;
+      relationship_count: number;
+      relationships: Array<{
+        uuid: string;
+        fact: string;
+        valid_at: string;
+        invalid_at: string | null;
+      }>;
+    }
+  | {
+      group_id: string;
+      total_episodes: number;
+      total_entities: number;
+      total_facts: number;
+      total_communities: number;
+      oldest_memory: string | null;
+      newest_memory: string | null;
+    };
 
 /**
  * Type guards for tool inputs validation
@@ -62,7 +122,9 @@ function isSearchMemoryParams(args: unknown): args is ToolInputs['search_memory'
     a.group_ids.length > 0 &&
     a.group_ids.every((id) => typeof id === 'string') &&
     (a.max_facts === undefined ||
-      (typeof a.max_facts === 'number' && a.max_facts > 0 && a.max_facts <= 100))
+      (typeof a.max_facts === 'number' && a.max_facts > 0 && a.max_facts <= 100)) &&
+    (a.start_time === undefined || typeof a.start_time === 'string') &&
+    (a.end_time === undefined || typeof a.end_time === 'string')
   );
 }
 
@@ -90,6 +152,75 @@ function isDeleteEpisodeParams(args: unknown): args is ToolInputs['delete_episod
 
 function isClearGraphParams(args: unknown): args is ToolInputs['clear_graph'] {
   return typeof args === 'object' && args !== null;
+}
+
+function isGetQueueStatusParams(args: unknown): args is ToolInputs['get_queue_status'] {
+  return typeof args === 'object' && args !== null;
+}
+
+function isDeleteGroupParams(args: unknown): args is ToolInputs['delete_group'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0
+  );
+}
+
+function isDeleteFactParams(args: unknown): args is ToolInputs['delete_fact'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0
+  );
+}
+
+function isGetFactDetailsParams(args: unknown): args is ToolInputs['get_fact_details'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0
+  );
+}
+
+function isListGroupsParams(args: unknown): args is ToolInputs['list_groups'] {
+  return typeof args === 'object' && args !== null;
+}
+
+function isGetEntitiesParams(args: unknown): args is ToolInputs['get_entities'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0 &&
+    (a.limit === undefined || (typeof a.limit === 'number' && a.limit > 0 && a.limit <= 200))
+  );
+}
+
+function isGetEntityRelationshipsParams(args: unknown): args is ToolInputs['get_entity_relationships'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0
+  );
+}
+
+function isGetGraphStatsParams(args: unknown): args is ToolInputs['get_graph_stats'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0
+  );
 }
 
 /**
@@ -163,13 +294,15 @@ export class GraphitiMCPServer {
           case 'search_memory': {
             if (!isSearchMemoryParams(args)) {
               throw new Error(
-                'Invalid parameters for search_memory. Required: query (string), group_ids (array of strings), max_facts (number, max 100, optional)'
+                'Invalid parameters for search_memory. Required: query (string), group_ids (array of strings), max_facts (number, max 100, optional), start_time (ISO string, optional), end_time (ISO string, optional)'
               );
             }
             result = await this.client.searchMemory({
               query: args.query,
               group_ids: args.group_ids,
               max_facts: args.max_facts,
+              start_time: args.start_time,
+              end_time: args.end_time,
             });
             break;
           }
@@ -200,6 +333,70 @@ export class GraphitiMCPServer {
               throw new Error('Invalid parameters for clear_graph');
             }
             result = await this.client.clearGraph();
+            break;
+          }
+
+          case 'get_queue_status': {
+            if (!isGetQueueStatusParams(args)) {
+              throw new Error('Invalid parameters for get_queue_status');
+            }
+            result = await this.client.getQueueStatus();
+            break;
+          }
+
+          case 'delete_group': {
+            if (!isDeleteGroupParams(args)) {
+              throw new Error('Invalid parameters for delete_group. Required: group_id (string)');
+            }
+            result = await this.client.deleteGroup(args.group_id);
+            break;
+          }
+
+          case 'delete_fact': {
+            if (!isDeleteFactParams(args)) {
+              throw new Error('Invalid parameters for delete_fact. Required: uuid (string)');
+            }
+            result = await this.client.deleteFact(args.uuid);
+            break;
+          }
+
+          case 'get_fact_details': {
+            if (!isGetFactDetailsParams(args)) {
+              throw new Error('Invalid parameters for get_fact_details. Required: uuid (string)');
+            }
+            result = await this.client.getFactDetails(args.uuid);
+            break;
+          }
+
+          case 'list_groups': {
+            if (!isListGroupsParams(args)) {
+              throw new Error('Invalid parameters for list_groups');
+            }
+            result = await this.client.listGroups();
+            break;
+          }
+
+          case 'get_entities': {
+            if (!isGetEntitiesParams(args)) {
+              throw new Error('Invalid parameters for get_entities. Required: group_id (string), limit (number, max 200, optional)');
+            }
+            result = await this.client.getEntities(args.group_id, args.limit);
+            break;
+          }
+
+          case 'get_entity_relationships': {
+            if (!isGetEntityRelationshipsParams(args)) {
+              throw new Error('Invalid parameters for get_entity_relationships. Required: uuid (string)');
+            }
+            result = await this.client.getEntityRelationships(args.uuid);
+            break;
+          }
+
+          case 'get_graph_stats': {
+            if (!isGetGraphStatsParams(args)) {
+              throw new Error('Invalid parameters for get_graph_stats. Required: group_id (string)');
+            }
+            result = await this.client.getGraphStats(args.group_id);
             break;
           }
 

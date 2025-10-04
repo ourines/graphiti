@@ -11,6 +11,12 @@ class SearchQuery(BaseModel):
     )
     query: str
     max_facts: int = Field(default=10, description='The maximum number of facts to retrieve')
+    start_time: datetime | None = Field(
+        None, description='Filter facts valid after this time (ISO 8601 format)'
+    )
+    end_time: datetime | None = Field(
+        None, description='Filter facts valid before this time (ISO 8601 format)'
+    )
 
 
 class FactResult(BaseModel):

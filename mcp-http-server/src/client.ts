@@ -19,6 +19,8 @@ export interface SearchMemoryParams {
   query: string;
   group_ids: string[];
   max_facts?: number;
+  start_time?: string;
+  end_time?: string;
 }
 
 /**
@@ -146,13 +148,16 @@ export class GraphitiClient {
   async addMemory(params: AddMemoryParams): Promise<{ message: string; success: boolean }> {
     this.logger.info(`Adding memory: ${params.name}`);
 
+    // Generate UUID if not provided for better traceability
+    const messageUuid = params.uuid || crypto.randomUUID();
+
     return this.fetch('/messages', {
       method: 'POST',
       body: JSON.stringify({
         group_id: params.group_id,
         messages: [
           {
-            uuid: params.uuid,
+            uuid: messageUuid,
             name: params.name,
             content: params.content,
             role: params.role || 'user',
@@ -179,13 +184,22 @@ export class GraphitiClient {
   }> {
     this.logger.info(`Searching memory: ${params.query}`);
 
+    const body: any = {
+      query: params.query,
+      group_ids: params.group_ids,
+      max_facts: params.max_facts || 10,
+    };
+
+    if (params.start_time) {
+      body.start_time = params.start_time;
+    }
+    if (params.end_time) {
+      body.end_time = params.end_time;
+    }
+
     return this.fetch('/search', {
       method: 'POST',
-      body: JSON.stringify({
-        query: params.query,
-        group_ids: params.group_ids,
-        max_facts: params.max_facts || 10,
-      }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -230,6 +244,157 @@ export class GraphitiClient {
 
     return this.fetch('/clear', {
       method: 'POST',
+    });
+  }
+
+  /**
+   * Get queue processing status
+   * GET /queue/status
+   */
+  async getQueueStatus(): Promise<{
+    queue_size: number;
+    current_job: {
+      job_id: string;
+      job_type: string;
+      started_at: string;
+      completed_at: string | null;
+      status: string;
+      error: string | null;
+      retry_count: number;
+    } | null;
+    recent_jobs: Array<{
+      job_id: string;
+      job_type: string;
+      started_at: string;
+      completed_at: string | null;
+      status: string;
+      error: string | null;
+      retry_count: number;
+    }>;
+  }> {
+    this.logger.info('Getting queue status');
+
+    return this.fetch('/queue/status', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Delete a specific group and all its associated data
+   * DELETE /group/{group_id}
+   */
+  async deleteGroup(groupId: string): Promise<{ message: string; success: boolean }> {
+    this.logger.warn(`Deleting entire group: ${groupId}`);
+
+    return this.fetch(`/group/${groupId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Delete a specific fact (entity edge)
+   * DELETE /entity-edge/{uuid}
+   */
+  async deleteFact(uuid: string): Promise<{ message: string; success: boolean }> {
+    this.logger.info(`Deleting fact: ${uuid}`);
+
+    return this.fetch(`/entity-edge/${uuid}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Get detailed information about a specific fact
+   * GET /entity-edge/{uuid}
+   */
+  async getFactDetails(uuid: string): Promise<{
+    uuid: string;
+    fact: string;
+    valid_at: string;
+    invalid_at: string | null;
+    [key: string]: any;
+  }> {
+    this.logger.info(`Getting fact details: ${uuid}`);
+
+    return this.fetch(`/entity-edge/${uuid}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * List all group_ids in the knowledge graph
+   * GET /groups
+   */
+  async listGroups(): Promise<{ group_ids: string[] }> {
+    this.logger.info('Listing all groups');
+
+    return this.fetch('/groups', {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Get entities for a specific group
+   * GET /entities/{group_id}
+   */
+  async getEntities(groupId: string, limit?: number): Promise<{
+    group_id: string;
+    count: number;
+    limit: number;
+    entities: Array<{
+      uuid: string;
+      name: string;
+      group_id: string;
+      summary: string | null;
+      created_at: string | null;
+    }>;
+  }> {
+    this.logger.info(`Getting entities for group: ${groupId}`);
+
+    const queryParams = limit ? `?limit=${limit}` : '';
+    return this.fetch(`/entities/${groupId}${queryParams}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Get all relationships for a specific entity
+   * GET /entities/{uuid}/relationships
+   */
+  async getEntityRelationships(uuid: string): Promise<{
+    entity_uuid: string;
+    relationship_count: number;
+    relationships: Array<{
+      uuid: string;
+      fact: string;
+      valid_at: string;
+      invalid_at: string | null;
+    }>;
+  }> {
+    this.logger.info(`Getting relationships for entity: ${uuid}`);
+
+    return this.fetch(`/entities/${uuid}/relationships`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Get statistics for a specific group's knowledge graph
+   * GET /stats/{group_id}
+   */
+  async getGraphStats(groupId: string): Promise<{
+    group_id: string;
+    total_episodes: number;
+    total_entities: number;
+    total_facts: number;
+    total_communities: number;
+    oldest_memory: string | null;
+    newest_memory: string | null;
+  }> {
+    this.logger.info(`Getting graph stats for group: ${groupId}`);
+
+    return this.fetch(`/stats/${groupId}`, {
+      method: 'GET',
     });
   }
 

@@ -4,19 +4,25 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
-from typing import Deque, Dict, Any
+from typing import Any, Deque, Dict
 
 from fastapi import APIRouter, FastAPI, status
 from graphiti_core.nodes import EpisodeType  # type: ignore
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data  # type: ignore
 
-from graph_service.dto import AddEntityNodeRequest, AddMessagesRequest, Message, Result
-from graph_service.zep_graphiti import ZepGraphitiDep, create_llm_client, create_embedder, ZepGraphiti
 from graph_service.config import get_settings
+from graph_service.dto import AddEntityNodeRequest, AddMessagesRequest, Message, Result
+from graph_service.zep_graphiti import (
+    ZepGraphiti,
+    ZepGraphitiDep,
+    create_embedder,
+    create_llm_client,
+)
 
 
 class JobStatus:
     """Track job execution status"""
+
     def __init__(self, job_id: str, job_type: str):
         self.job_id = job_id
         self.job_type = job_type
@@ -40,7 +46,7 @@ class JobStatus:
 
 class AsyncWorker:
     MAX_RETRIES = 3
-    INITIAL_RETRY_DELAY = 10  # seconds
+    INITIAL_RETRY_DELAY = 30  # seconds (increased from 10 to handle rate limits better)
     MAX_HISTORY = 100  # Keep last 100 jobs
 
     def __init__(self):
@@ -87,11 +93,15 @@ class AsyncWorker:
                         error_type = type(e).__name__
 
                         # Check if it's a rate limit error
-                        is_rate_limit = 'RateLimitError' in error_type or 'rate limit' in str(e).lower()
+                        is_rate_limit = (
+                            'RateLimitError' in error_type or 'rate limit' in str(e).lower()
+                        )
 
                         if is_rate_limit and attempt < self.MAX_RETRIES - 1:
                             job_status.retry_count = attempt + 1
-                            print(f'⚠️  Rate limit hit, retrying in {retry_delay}s (attempt {attempt + 1}/{self.MAX_RETRIES})')
+                            print(
+                                f'⚠️  Rate limit hit, retrying in {retry_delay}s (attempt {attempt + 1}/{self.MAX_RETRIES})'
+                            )
                             await asyncio.sleep(retry_delay)
                             retry_delay *= 2  # Exponential backoff
                         else:
@@ -110,6 +120,7 @@ class AsyncWorker:
                 error_msg = f'{type(e).__name__}: {e}'
                 print(f'❌ Job failed with error: {error_msg}')
                 import traceback
+
                 traceback.print_exc()
 
                 if job_status:
@@ -183,7 +194,9 @@ async def add_messages(
         msg_id = m.uuid[:8] if m.uuid else uuid.uuid4().hex[:8]
         job_id = f'msg_{msg_id}'
         job_type = f'add_episode:{m.name}'
-        await async_worker.queue.put((partial(add_messages_task, m, request.group_id), job_id, job_type))
+        await async_worker.queue.put(
+            (partial(add_messages_task, m, request.group_id), job_id, job_type)
+        )
 
     return Result(message='Messages added to processing queue', success=True)
 

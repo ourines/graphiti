@@ -900,6 +900,7 @@ class Graphiti:
         group_ids: list[str] | None = None,
         num_results=DEFAULT_SEARCH_LIMIT,
         search_filter: SearchFilters | None = None,
+        priority_group_id: str | None = None,  # 🆕 Multi-project enhancement
     ) -> list[EntityEdge]:
         """
         Perform a hybrid search on the knowledge graph.
@@ -920,6 +921,8 @@ class Graphiti:
             The graph partitions to return data from.
         num_results : int, optional
             The maximum number of results to return. Defaults to 10.
+        priority_group_id : str | None, optional
+            🆕 Prioritize results from this group (results get 2x weight in ranking).
 
         Returns
         -------
@@ -947,6 +950,7 @@ class Graphiti:
                 search_config,
                 search_filter if search_filter is not None else SearchFilters(),
                 center_node_uuid,
+                priority_group_id=priority_group_id,  # 🆕 Pass priority group
             )
         ).edges
 

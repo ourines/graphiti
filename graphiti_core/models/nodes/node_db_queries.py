@@ -25,7 +25,7 @@ def get_episode_node_save_query(provider: GraphProvider) -> str:
             return """
                 MERGE (n:Episodic {uuid: $uuid})
                 SET n = {uuid: $uuid, name: $name, group_id: $group_id, source_description: $source_description, source: $source, content: $content,
-                entity_edges: join([x IN coalesce($entity_edges, []) | toString(x) ], '|'), created_at: $created_at, valid_at: $valid_at}
+                entity_edges: join([x IN coalesce($entity_edges, []) | toString(x) ], '|'), created_at: $created_at, valid_at: $valid_at, tags: $tags, priority: $priority, metadata: $metadata}
                 RETURN n.uuid AS uuid
             """
         case GraphProvider.KUZU:
@@ -39,21 +39,24 @@ def get_episode_node_save_query(provider: GraphProvider) -> str:
                     n.source_description = $source_description,
                     n.content = $content,
                     n.valid_at = $valid_at,
-                    n.entity_edges = $entity_edges
+                    n.entity_edges = $entity_edges,
+                    n.tags = $tags,
+                    n.priority = $priority,
+                    n.metadata = $metadata
                 RETURN n.uuid AS uuid
             """
         case GraphProvider.FALKORDB:
             return """
                 MERGE (n:Episodic {uuid: $uuid})
                 SET n = {uuid: $uuid, name: $name, group_id: $group_id, source_description: $source_description, source: $source, content: $content,
-                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at}
+                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at, tags: $tags, priority: $priority, metadata: $metadata}
                 RETURN n.uuid AS uuid
             """
         case _:  # Neo4j
             return """
                 MERGE (n:Episodic {uuid: $uuid})
                 SET n = {uuid: $uuid, name: $name, group_id: $group_id, source_description: $source_description, source: $source, content: $content,
-                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at}
+                entity_edges: $entity_edges, created_at: $created_at, valid_at: $valid_at, tags: $tags, priority: $priority, metadata: $metadata}
                 RETURN n.uuid AS uuid
             """
 
@@ -95,8 +98,8 @@ def get_episode_node_save_bulk_query(provider: GraphProvider) -> str:
             return """
                 UNWIND $episodes AS episode
                 MERGE (n:Episodic {uuid: episode.uuid})
-                SET n = {uuid: episode.uuid, name: episode.name, group_id: episode.group_id, source_description: episode.source_description, source: episode.source, content: episode.content, 
-                entity_edges: episode.entity_edges, created_at: episode.created_at, valid_at: episode.valid_at}
+                SET n = {uuid: episode.uuid, name: episode.name, group_id: episode.group_id, source_description: episode.source_description, source: episode.source, content: episode.content,
+                entity_edges: episode.entity_edges, created_at: episode.created_at, valid_at: episode.valid_at, tags: episode.tags, priority: episode.priority, metadata: episode.metadata}
                 RETURN n.uuid AS uuid
             """
 
@@ -145,7 +148,10 @@ def get_entity_node_save_query(provider: GraphProvider, labels: str, has_aoss: b
                     n.created_at = $created_at,
                     n.name_embedding = $name_embedding,
                     n.summary = $summary,
-                    n.attributes = $attributes
+                    n.attributes = $attributes,
+                    n.tags = $tags,
+                    n.priority = $priority,
+                    n.metadata = $metadata
                 WITH n
                 RETURN n.uuid AS uuid
             """
@@ -229,7 +235,10 @@ def get_entity_node_save_bulk_query(
                     n.created_at = $created_at,
                     n.name_embedding = $name_embedding,
                     n.summary = $summary,
-                    n.attributes = $attributes
+                    n.attributes = $attributes,
+                    n.tags = $tags,
+                    n.priority = $priority,
+                    n.metadata = $metadata
                 RETURN n.uuid AS uuid
             """
         case _:  # Neo4j

@@ -160,7 +160,8 @@ async def add_nodes_and_edges_bulk_tx(
     embedder: EmbedderClient,
     driver: GraphDriver,
 ):
-    episodes = [dict(episode) for episode in episodic_nodes]
+    # 使用 model_dump() 而不是 dict()，以便正确序列化 metadata
+    episodes = [episode.model_dump() for episode in episodic_nodes]
     for episode in episodes:
         episode['source'] = str(episode['source'].value)
         episode.pop('labels', None)
@@ -177,6 +178,10 @@ async def add_nodes_and_edges_bulk_tx(
             'group_id': node.group_id,
             'summary': node.summary,
             'created_at': node.created_at,
+            # 添加新的元数据字段
+            'tags': node.tags,
+            'priority': node.priority,
+            'metadata': json.dumps(node.metadata) if node.metadata else '',
         }
 
         if not bool(driver.aoss_client):
@@ -207,6 +212,10 @@ async def add_nodes_and_edges_bulk_tx(
             'expired_at': edge.expired_at,
             'valid_at': edge.valid_at,
             'invalid_at': edge.invalid_at,
+            # 添加新的元数据字段
+            'tags': edge.tags,
+            'priority': edge.priority,
+            'metadata': json.dumps(edge.metadata) if edge.metadata else '',
         }
 
         if not bool(driver.aoss_client):

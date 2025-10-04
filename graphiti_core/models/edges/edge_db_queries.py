@@ -95,7 +95,10 @@ def get_entity_edge_save_query(provider: GraphProvider, has_aoss: bool = False) 
                     e.expired_at = $expired_at,
                     e.valid_at = $valid_at,
                     e.invalid_at = $invalid_at,
-                    e.attributes = $attributes
+                    e.attributes = $attributes,
+                    e.tags = $tags,
+                    e.priority = $priority,
+                    e.metadata = $metadata
                 RETURN e.uuid AS uuid
             """
         case _:  # Neo4j
@@ -129,7 +132,8 @@ def get_entity_edge_save_bulk_query(provider: GraphProvider, has_aoss: bool = Fa
                 MATCH (target:Entity {uuid: edge.target_node_uuid})
                 MERGE (source)-[r:RELATES_TO {uuid: edge.uuid}]->(target)
                 SET r = {uuid: edge.uuid, name: edge.name, group_id: edge.group_id, fact: edge.fact, episodes: edge.episodes,
-                created_at: edge.created_at, expired_at: edge.expired_at, valid_at: edge.valid_at, invalid_at: edge.invalid_at, fact_embedding: vecf32(edge.fact_embedding)}
+                created_at: edge.created_at, expired_at: edge.expired_at, valid_at: edge.valid_at, invalid_at: edge.invalid_at, fact_embedding: vecf32(edge.fact_embedding),
+                tags: edge.tags, priority: edge.priority, metadata: edge.metadata}
                 WITH r, edge
                 RETURN edge.uuid AS uuid
             """
@@ -159,7 +163,10 @@ def get_entity_edge_save_bulk_query(provider: GraphProvider, has_aoss: bool = Fa
                     e.expired_at = $expired_at,
                     e.valid_at = $valid_at,
                     e.invalid_at = $invalid_at,
-                    e.attributes = $attributes
+                    e.attributes = $attributes,
+                    e.tags = $tags,
+                    e.priority = $priority,
+                    e.metadata = $metadata
                 RETURN e.uuid AS uuid
             """
         case _:

@@ -4,7 +4,11 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 from graphiti_core import Graphiti  # type: ignore
 from graphiti_core.edges import EntityEdge  # type: ignore
-from graphiti_core.embedder import EmbedderClient, OpenAIEmbedder, OpenAIEmbedderConfig  # type: ignore
+from graphiti_core.embedder import (  # type: ignore
+    EmbedderClient,
+    OpenAIEmbedder,
+    OpenAIEmbedderConfig,
+)
 from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig  # type: ignore
 from graphiti_core.errors import EdgeNotFoundError, GroupsEdgesNotFoundError, NodeNotFoundError
 from graphiti_core.llm_client import LLMClient  # type: ignore
@@ -260,6 +264,11 @@ def get_fact_result_from_edge(edge: EntityEdge):
         invalid_at=edge.invalid_at,
         created_at=edge.created_at,
         expired_at=edge.expired_at,
+        # 新增字段
+        source_group_id=edge.group_id,
+        relevance_score=getattr(edge, 'score', None),
+        tags=getattr(edge, 'tags', []),
+        priority=getattr(edge, 'priority', 0),
     )
 
 

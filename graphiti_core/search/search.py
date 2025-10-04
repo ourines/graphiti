@@ -74,6 +74,7 @@ async def search(
     center_node_uuid: str | None = None,
     bfs_origin_node_uuids: list[str] | None = None,
     query_vector: list[float] | None = None,
+    priority_group_id: str | None = None,  # 🆕 Multi-project enhancement
 ) -> SearchResults:
     start = time()
 
@@ -127,6 +128,7 @@ async def search(
             bfs_origin_node_uuids,
             config.limit,
             config.reranker_min_score,
+            priority_group_id,  # 🆕 Pass priority group
         ),
         node_search(
             driver,
@@ -194,6 +196,7 @@ async def edge_search(
     bfs_origin_node_uuids: list[str] | None = None,
     limit=DEFAULT_SEARCH_LIMIT,
     reranker_min_score: float = 0,
+    priority_group_id: str | None = None,  # 🆕 Multi-project enhancement
 ) -> tuple[list[EntityEdge], list[float]]:
     if config is None:
         return [], []
@@ -215,6 +218,7 @@ async def edge_search(
                 group_ids,
                 2 * limit,
                 config.sim_min_score,
+                priority_group_id,  # 🆕 Pass priority group
             )
         )
     if EdgeSearchMethod.bfs in config.search_methods:

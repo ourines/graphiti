@@ -320,6 +320,7 @@ async def edge_similarity_search(
     group_ids: list[str] | None = None,
     limit: int = RELEVANT_SCHEMA_LIMIT,
     min_score: float = DEFAULT_MIN_SCORE,
+    priority_group_id: str | None = None,  # 🆕 Multi-project enhancement
 ) -> list[EntityEdge]:
     match_query = """
         MATCH (n:Entity)-[e:RELATES_TO]->(m:Entity)
@@ -360,7 +361,7 @@ async def edge_similarity_search(
                                                                                                                 """
             + filter_query
             + """
-            RETURN DISTINCT id(e) as id, e.fact_embedding as embedding
+            RETURN DISTINCT id(e) as id, e.fact_embedding as embedding, e.group_id as group_id
             """
         )
         resp, header, _ = await driver.execute_query(
@@ -380,6 +381,9 @@ async def edge_similarity_search(
                     score = calculate_cosine_similarity(
                         search_vector, list(map(float, r['embedding'].split(',')))
                     )
+                    # 🆕 Multi-project enhancement: Apply weight for priority group
+                    if priority_group_id and r.get('group_id') == priority_group_id:
+                        score = score * 2.0
                     if score > min_score:
                         input_ids.append({'id': r['id'], 'score': score})
 
@@ -443,18 +447,44 @@ async def edge_similarity_search(
 
             # Get edges
             entity_edges = await EntityEdge.get_by_uuids(driver, list(input_uuids.keys()))
+
+            # 🆕 Multi-project enhancement: Apply weight for priority group
+            if priority_group_id:
+                for edge in entity_edges:
+                    base_score = input_uuids.get(edge.uuid, 0)
+                    if edge.group_id == priority_group_id:
+                        input_uuids[edge.uuid] = base_score * 2.0
+
             entity_edges.sort(key=lambda e: input_uuids.get(e.uuid, 0), reverse=True)
             return entity_edges
         return []
 
     else:
+        # 🆕 Multi-project enhancement: Add weight calculation for priority group
+        weight_calculation = ''
+        if priority_group_id:
+            weight_calculation = """
+            , CASE e.group_id
+                WHEN $priority_group_id THEN 2.0
+                ELSE 1.0
+              END as group_weight
+            WITH DISTINCT e, n, m, similarity, group_weight, (similarity * group_weight) as score
+            """
+            filter_params['priority_group_id'] = priority_group_id
+        else:
+            weight_calculation = """
+            WITH DISTINCT e, n, m, similarity as score
+            """
+
         query = (
             match_query
             + filter_query
             + """
             WITH DISTINCT e, n, m, """
             + get_vector_cosine_func_query('e.fact_embedding', search_vector_var, driver.provider)
-            + """ AS score
+            + """ AS similarity"""
+            + weight_calculation
+            + """
             WHERE score > $min_score
             RETURN
             """

@@ -9,6 +9,7 @@ class SearchQuery(BaseModel):
     group_ids: list[str] | None = Field(
         None, description='The group ids for the memories to search'
     )
+    priority_group_id: str | None = Field(None, description='优先搜索的 group_id，结果会排在前面')
     query: str
     max_facts: int = Field(default=10, description='The maximum number of facts to retrieve')
     start_time: datetime | None = Field(
@@ -17,6 +18,8 @@ class SearchQuery(BaseModel):
     end_time: datetime | None = Field(
         None, description='Filter facts valid before this time (ISO 8601 format)'
     )
+    min_priority: int | None = Field(None, description='最小优先级过滤（0-10）', ge=0, le=10)
+    tags: list[str] | None = Field(None, description='按标签过滤')
 
 
 class FactResult(BaseModel):
@@ -27,6 +30,11 @@ class FactResult(BaseModel):
     invalid_at: datetime | None
     created_at: datetime
     expired_at: datetime | None
+    # 新增字段
+    source_group_id: str = Field(..., description='来源项目的 group_id')
+    relevance_score: float | None = Field(None, description='相关性评分 0-1')
+    tags: list[str] = Field(default_factory=list, description='标签列表')
+    priority: int = Field(default=0, description='优先级 0-10', ge=0, le=10)
 
     class Config:
         json_encoders = {datetime: lambda v: v.astimezone(timezone.utc).isoformat()}

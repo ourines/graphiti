@@ -21,6 +21,10 @@ export interface SearchMemoryParams {
   max_facts?: number;
   start_time?: string;
   end_time?: string;
+  // 🆕 Multi-project enhancement fields
+  priority_group_id?: string; // Prioritize results from this group
+  min_priority?: number; // Filter by minimum priority (0-10)
+  tags?: string[]; // Filter by tags
 }
 
 /**
@@ -180,6 +184,11 @@ export class GraphitiClient {
       fact: string;
       valid_at: string;
       invalid_at: string | null;
+      // 🆕 Multi-project enhancement fields
+      source_group_id?: string;
+      relevance_score?: number;
+      tags?: string[];
+      priority?: number;
     }>;
   }> {
     this.logger.info(`Searching memory: ${params.query}`);
@@ -195,6 +204,16 @@ export class GraphitiClient {
     }
     if (params.end_time) {
       body.end_time = params.end_time;
+    }
+    // 🆕 Multi-project enhancement parameters
+    if (params.priority_group_id) {
+      body.priority_group_id = params.priority_group_id;
+    }
+    if (params.min_priority !== undefined) {
+      body.min_priority = params.min_priority;
+    }
+    if (params.tags && params.tags.length > 0) {
+      body.tags = params.tags;
     }
 
     return this.fetch('/search', {
@@ -394,6 +413,66 @@ export class GraphitiClient {
     this.logger.info(`Getting graph stats for group: ${groupId}`);
 
     return this.fetch(`/stats/${groupId}`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Find relationship path between two entities (up to N hops)
+   * POST /find-path
+   */
+  async findRelationshipPath(params: {
+    source_entity: string;
+    target_entity?: string;
+    max_depth?: number;
+    group_ids?: string[];
+  }): Promise<{
+    paths: Array<
+      Array<{
+        uuid?: string;
+        name?: string;
+        type: 'node' | 'relationship';
+        group_id?: string;
+        fact?: string;
+        relation_type?: string;
+      }>
+    >;
+    total_paths: number;
+  }> {
+    this.logger.info(`Finding relationship path from ${params.source_entity}`);
+
+    return this.fetch('/find-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_entity: params.source_entity,
+        target_entity: params.target_entity,
+        max_depth: params.max_depth ?? 2,
+        group_ids: params.group_ids,
+      }),
+    });
+  }
+
+  /**
+   * Get all neighbors of an entity within N hops
+   * GET /entity/{uuid}/neighbors
+   */
+  async getEntityNeighbors(
+    uuid: string,
+    depth: number = 1
+  ): Promise<{
+    source_uuid: string;
+    neighbors: Array<{
+      uuid: string;
+      name: string;
+      group_id: string;
+      distance: number;
+    }>;
+    total: number;
+  }> {
+    this.logger.info(`Getting neighbors for entity ${uuid} within ${depth} hops`);
+
+    return this.fetch(`/entity/${uuid}/neighbors?depth=${depth}`, {
       method: 'GET',
     });
   }

@@ -61,7 +61,13 @@ Use this tool to retrieve information that was previously stored using add_memor
 🆕 TIME FILTERING: You can now filter by time range!
 - start_time: Only return facts valid after this time (ISO 8601: "2024-01-01T00:00:00Z")
 - end_time: Only return facts valid before this time
-- Use cases: "What did we discuss last week?", "Memories from January 2024"`,
+- Use cases: "What did we discuss last week?", "Memories from January 2024"
+
+🆕 MULTI-PROJECT SEARCH: Enhanced search capabilities for managing multiple projects!
+- priority_group_id: Prioritize results from a specific project (e.g., "keymize" over "xiaoman")
+- min_priority: Only return facts with priority >= this value (0-10 scale)
+- tags: Filter by tags (e.g., ["#Rust", "#工具"])
+- Results now include source_group_id, relevance_score, tags, and priority fields`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,6 +92,21 @@ Use this tool to retrieve information that was previously stored using add_memor
         end_time: {
           type: 'string',
           description: 'Optional: Filter facts valid before this time (ISO 8601 format)',
+        },
+        priority_group_id: {
+          type: 'string',
+          description: '🆕 Optional: Prioritize results from this specific project/group. Results from this group will rank higher in search results.',
+        },
+        min_priority: {
+          type: 'number',
+          description: '🆕 Optional: Only return facts with priority >= this value (0-10 scale). Use to filter for important memories.',
+          minimum: 0,
+          maximum: 10,
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '🆕 Optional: Filter results by tags (e.g., ["#Rust", "#前端"]). Only facts containing at least one of these tags will be returned.',
         },
       },
       required: ['query', 'group_ids'],
@@ -374,6 +395,155 @@ Example: "How big is my 'work' knowledge graph?" → Returns comprehensive stats
       required: ['group_id'],
     },
   },
+
+  {
+    name: 'find_relationship_path',
+    description: `Find relationship paths between two entities in the knowledge graph (up to N hops).
+
+This tool performs graph traversal to discover how entities are connected through intermediate relationships.
+
+🔍 Use cases:
+- "How is Alice connected to the Project X?"
+- "What's the relationship between concept A and concept B?"
+- "Find all paths linking these two entities within 3 hops"
+- "Show me entities that connect User and Organization"
+
+💡 Two modes:
+1. **Specific target**: Provide both source_entity and target_entity to find shortest paths between them
+2. **Exploration**: Only provide source_entity to discover all entities within N hops
+
+📊 Returns:
+- Structured paths showing alternating nodes and relationships
+- Each node includes: uuid, name, group_id
+- Each relationship includes: fact, relation_type
+- Respects group_ids filter if provided`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source_entity: {
+          type: 'string',
+          description: 'Source entity name or UUID. The starting point for path finding.',
+        },
+        target_entity: {
+          type: 'string',
+          description: 'Optional: Target entity name or UUID. If provided, finds paths between source and target. If omitted, explores all paths from source.',
+        },
+        max_depth: {
+          type: 'number',
+          description: 'Maximum number of hops/relationships to traverse (1-5). Default: 2',
+          minimum: 1,
+          maximum: 5,
+          default: 2,
+        },
+        group_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Limit search to specific projects/workspaces. Only paths through entities in these groups will be returned.',
+        },
+      },
+      required: ['source_entity'],
+    },
+  },
+
+  {
+    name: 'get_entity_neighbors',
+    description: `Get all neighboring entities within N hops of a specific entity.
+
+This tool discovers the local "neighborhood" around an entity by traversing the graph.
+
+🔍 Use cases:
+- "What entities are directly connected to Alice?"
+- "Show me all related concepts within 2 hops of 'Machine Learning'"
+- "Find entities near this node in the knowledge graph"
+- "Explore the local context around this entity"
+
+📊 Returns:
+- List of neighboring entities sorted by distance
+- Each neighbor includes: uuid, name, group_id, distance (number of hops)
+- Distance = 1 means directly connected
+- Distance = 2 means connected through one intermediate entity
+
+💡 Tip: Use depth=1 for immediate connections, depth=2-3 for broader context exploration.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uuid: {
+          type: 'string',
+          description: 'UUID of the entity to get neighbors for. Get this from get_entities or search results.',
+        },
+        depth: {
+          type: 'number',
+          description: 'Maximum number of hops to explore (1-5). Default: 1',
+          minimum: 1,
+          maximum: 5,
+          default: 1,
+        },
+      },
+      required: ['uuid'],
+    },
+  },
+
+  {
+    name: 'set_context',
+    description: `Set the current conversation context (active project/workspace).
+
+🎯 Purpose:
+This tool enables context-aware memory operations by setting which group_id should be prioritized in searches.
+
+🔍 How it works:
+- Sets the active group_id for the current conversation
+- Future search_memory calls will automatically prioritize results from this group
+- Tracks recently used groups for easy context switching
+- Auto-applied to add_memory operations
+
+💡 Use cases:
+- "Switch to project keymize context" → set_context(group_id="keymize")
+- "Work on personal memories now" → set_context(group_id="default_user")
+- "Focus on work-related knowledge" → set_context(group_id="work")
+
+⚡ Benefits:
+- No need to manually specify priority_group_id in every search
+- Reduces context-switching overhead
+- Makes multi-project workflows more natural
+
+Example workflow:
+1. set_context(group_id="project_x")
+2. search_memory(query="API design", group_ids=["project_x", "shared"])
+   → Automatically prioritizes project_x results`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        group_id: {
+          type: 'string',
+          description: 'The group_id to set as current context. Use list_groups to see available groups.',
+        },
+      },
+      required: ['group_id'],
+    },
+  },
+
+  {
+    name: 'get_context',
+    description: `Get the current conversation context state.
+
+📊 Returns:
+- Current active group_id (or null if not set)
+- Recently used group_ids (last 10)
+- Last updated timestamp
+
+💡 Use cases:
+- "What context am I in?" → Check currentGroupId
+- "What projects have I worked on recently?" → Check recentGroupIds
+- Debugging context-related issues
+- Verifying context switches
+
+This helps you understand which project/workspace is currently active and will be prioritized in searches.`,
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ] as const;
 
 /**
@@ -398,6 +568,10 @@ export type ToolInputs = {
     max_facts?: number;
     start_time?: string;
     end_time?: string;
+    // 🆕 Multi-project enhancement fields
+    priority_group_id?: string;
+    min_priority?: number;
+    tags?: string[];
   };
   get_episodes: {
     group_id: string;
@@ -428,4 +602,18 @@ export type ToolInputs = {
   get_graph_stats: {
     group_id: string;
   };
+  find_relationship_path: {
+    source_entity: string;
+    target_entity?: string;
+    max_depth?: number;
+    group_ids?: string[];
+  };
+  get_entity_neighbors: {
+    uuid: string;
+    depth?: number;
+  };
+  set_context: {
+    group_id: string;
+  };
+  get_context: Record<string, never>;
 };

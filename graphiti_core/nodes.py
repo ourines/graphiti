@@ -94,6 +94,21 @@ class Node(BaseModel, ABC):
     group_id: str = Field(description='partition of the graph')
     labels: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: utc_now())
+    # 新增元数据字段
+    tags: list[str] = Field(default_factory=list, description='标签列表，如 ["#Rust", "#前端"]')
+    priority: int = Field(default=0, ge=0, le=10, description='优先级/重要性 0-10')
+    metadata: dict[str, Any] = Field(default_factory=dict, description='自定义元数据')
+
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """Override to serialize metadata as JSON string for Neo4j compatibility"""
+        data = super().model_dump(**kwargs)
+        # 将 metadata 字典转换为 JSON 字符串，Neo4j 不支持 Map 类型属性
+        if 'metadata' in data and data['metadata']:
+            data['metadata'] = json.dumps(data['metadata'])
+        elif 'metadata' in data:
+            # 空字典转为空字符串，避免 Neo4j Map{} 错误
+            data['metadata'] = ''
+        return data
 
     @abstractmethod
     async def save(self, driver: GraphDriver): ...
@@ -373,6 +388,9 @@ class EpisodicNode(Node):
             'created_at': self.created_at,
             'valid_at': self.valid_at,
             'source': self.source.value,
+            'tags': self.tags,
+            'priority': self.priority,
+            'metadata': json.dumps(self.metadata) if self.metadata else '',
         }
 
         if driver.aoss_client:
@@ -555,6 +573,9 @@ class EntityNode(Node):
             'group_id': self.group_id,
             'summary': self.summary,
             'created_at': self.created_at,
+            'tags': self.tags,
+            'priority': self.priority,
+            'metadata': json.dumps(self.metadata) if self.metadata else '',
         }
 
         if driver.provider == GraphProvider.KUZU:

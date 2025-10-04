@@ -8,6 +8,7 @@ import express from 'express';
 import type { GraphitiConfig, Logger } from './config.js';
 import { GraphitiClient } from './client.js';
 import { TOOLS, type ToolInputs } from './tools.js';
+import { ContextManager } from './context-manager.js';
 
 /**
  * Union type for all possible tool results
@@ -87,6 +88,39 @@ type ToolResult =
       total_communities: number;
       oldest_memory: string | null;
       newest_memory: string | null;
+    }
+  | {
+      message: string;
+      success: boolean;
+      currentContext: string | null;
+      recentGroups: string[];
+    }
+  | {
+      currentGroupId: string | null;
+      recentGroupIds: string[];
+      lastUpdated: Date | null;
+      message: string;
+    }
+  | {
+      paths: Array<Array<{
+        uuid?: string;
+        name?: string;
+        type: 'node' | 'relationship';
+        group_id?: string;
+        fact?: string;
+        relation_type?: string;
+      }>>;
+      total_paths: number;
+    }
+  | {
+      source_uuid: string;
+      neighbors: Array<{
+        uuid: string;
+        name: string;
+        group_id: string;
+        distance: number;
+      }>;
+      total: number;
     };
 
 /**
@@ -124,7 +158,13 @@ function isSearchMemoryParams(args: unknown): args is ToolInputs['search_memory'
     (a.max_facts === undefined ||
       (typeof a.max_facts === 'number' && a.max_facts > 0 && a.max_facts <= 100)) &&
     (a.start_time === undefined || typeof a.start_time === 'string') &&
-    (a.end_time === undefined || typeof a.end_time === 'string')
+    (a.end_time === undefined || typeof a.end_time === 'string') &&
+    (a.priority_group_id === undefined ||
+      (typeof a.priority_group_id === 'string' && a.priority_group_id.length > 0)) &&
+    (a.min_priority === undefined ||
+      (typeof a.min_priority === 'number' && a.min_priority >= 0 && a.min_priority <= 10)) &&
+    (a.tags === undefined ||
+      (Array.isArray(a.tags) && a.tags.every((tag) => typeof tag === 'string')))
   );
 }
 
@@ -223,6 +263,44 @@ function isGetGraphStatsParams(args: unknown): args is ToolInputs['get_graph_sta
   );
 }
 
+function isFindRelationshipPathParams(args: unknown): args is ToolInputs['find_relationship_path'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.source_entity === 'string' &&
+    a.source_entity.length > 0 &&
+    (a.target_entity === undefined || typeof a.target_entity === 'string') &&
+    (a.max_depth === undefined || typeof a.max_depth === 'number') &&
+    (a.group_ids === undefined || Array.isArray(a.group_ids))
+  );
+}
+
+function isGetEntityNeighborsParams(args: unknown): args is ToolInputs['get_entity_neighbors'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.uuid === 'string' &&
+    a.uuid.length > 0 &&
+    (a.depth === undefined || typeof a.depth === 'number')
+  );
+}
+
+function isSetContextParams(args: unknown): args is ToolInputs['set_context'] {
+  const a = args as Record<string, unknown>;
+  return (
+    typeof a === 'object' &&
+    a !== null &&
+    typeof a.group_id === 'string' &&
+    a.group_id.length > 0
+  );
+}
+
+function isGetContextParams(args: unknown): args is ToolInputs['get_context'] {
+  return typeof args === 'object' && args !== null;
+}
+
 /**
  * GraphiTi MCP Server
  * Implements Model Context Protocol for GraphiTi knowledge graph
@@ -231,6 +309,7 @@ export class GraphitiMCPServer {
   private server: Server;
   private client: GraphitiClient;
   private logger: Logger;
+  private contextManager: ContextManager;
 
   constructor(
     private config: GraphitiConfig,
@@ -238,6 +317,7 @@ export class GraphitiMCPServer {
   ) {
     this.logger = logger;
     this.client = new GraphitiClient(config, logger);
+    this.contextManager = new ContextManager();
 
     // Initialize MCP Server
     this.server = new Server(
@@ -281,6 +361,9 @@ export class GraphitiMCPServer {
                 'Invalid parameters for add_memory. Required: name (string, max 500), content (string, max 50000), group_id (string, max 255)'
               );
             }
+            // Track group usage for auto-context detection
+            this.contextManager.trackGroupUsage(args.group_id);
+
             result = await this.client.addMemory({
               name: args.name,
               content: args.content,
@@ -294,15 +377,30 @@ export class GraphitiMCPServer {
           case 'search_memory': {
             if (!isSearchMemoryParams(args)) {
               throw new Error(
-                'Invalid parameters for search_memory. Required: query (string), group_ids (array of strings), max_facts (number, max 100, optional), start_time (ISO string, optional), end_time (ISO string, optional)'
+                'Invalid parameters for search_memory. Required: query (string), group_ids (array of strings), max_facts (number, max 100, optional), start_time (ISO string, optional), end_time (ISO string, optional), priority_group_id (string, optional), min_priority (number 0-10, optional), tags (array of strings, optional)'
               );
             }
+
+            // Auto-inject current context as priority_group_id if not specified
+            const currentContext = this.contextManager.getCurrentContext();
+            const priorityGroupId = args.priority_group_id !== undefined
+              ? args.priority_group_id
+              : (currentContext || undefined);
+
+            if (currentContext && args.priority_group_id === undefined) {
+              this.logger.info(`Auto-prioritizing search results from context: ${currentContext}`);
+            }
+
             result = await this.client.searchMemory({
               query: args.query,
               group_ids: args.group_ids,
               max_facts: args.max_facts,
               start_time: args.start_time,
               end_time: args.end_time,
+              // 🆕 Multi-project enhancement parameters
+              priority_group_id: priorityGroupId,
+              min_priority: args.min_priority,
+              tags: args.tags,
             });
             break;
           }
@@ -397,6 +495,56 @@ export class GraphitiMCPServer {
               throw new Error('Invalid parameters for get_graph_stats. Required: group_id (string)');
             }
             result = await this.client.getGraphStats(args.group_id);
+            break;
+          }
+
+          case 'find_relationship_path': {
+            if (!isFindRelationshipPathParams(args)) {
+              throw new Error('Invalid parameters for find_relationship_path. Required: source_entity (string), Optional: target_entity (string), max_depth (number), group_ids (string[])');
+            }
+            result = await this.client.findRelationshipPath({
+              source_entity: args.source_entity,
+              target_entity: args.target_entity,
+              max_depth: args.max_depth,
+              group_ids: args.group_ids,
+            });
+            break;
+          }
+
+          case 'get_entity_neighbors': {
+            if (!isGetEntityNeighborsParams(args)) {
+              throw new Error('Invalid parameters for get_entity_neighbors. Required: uuid (string), Optional: depth (number)');
+            }
+            result = await this.client.getEntityNeighbors(args.uuid, args.depth);
+            break;
+          }
+
+          case 'set_context': {
+            if (!isSetContextParams(args)) {
+              throw new Error('Invalid parameters for set_context. Required: group_id (string)');
+            }
+            this.contextManager.setContext(args.group_id);
+            result = {
+              message: `Context set to group: ${args.group_id}`,
+              success: true,
+              currentContext: this.contextManager.getCurrentContext(),
+              recentGroups: this.contextManager.getRecentGroups(),
+            };
+            this.logger.info(`Context switched to: ${args.group_id}`);
+            break;
+          }
+
+          case 'get_context': {
+            if (!isGetContextParams(args)) {
+              throw new Error('Invalid parameters for get_context');
+            }
+            const contextState = this.contextManager.getContextState();
+            result = {
+              ...contextState,
+              message: contextState.currentGroupId
+                ? `Current context: ${contextState.currentGroupId}`
+                : 'No context set',
+            };
             break;
           }
 

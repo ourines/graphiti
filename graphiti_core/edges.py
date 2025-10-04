@@ -48,6 +48,21 @@ class Edge(BaseModel, ABC):
     source_node_uuid: str
     target_node_uuid: str
     created_at: datetime
+    # 新增元数据字段
+    tags: list[str] = Field(default_factory=list, description='标签列表，如 ["#Rust", "#前端"]')
+    priority: int = Field(default=0, ge=0, le=10, description='优先级/重要性 0-10')
+    metadata: dict[str, Any] = Field(default_factory=dict, description='自定义元数据')
+
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        """Override to serialize metadata as JSON string for Neo4j compatibility"""
+        data = super().model_dump(**kwargs)
+        # 将 metadata 字典转换为 JSON 字符串，Neo4j 不支持 Map 类型属性
+        if 'metadata' in data and data['metadata']:
+            data['metadata'] = json.dumps(data['metadata'])
+        elif 'metadata' in data:
+            # 空字典转为空字符串，避免 Neo4j Map{} 错误
+            data['metadata'] = ''
+        return data
 
     @abstractmethod
     async def save(self, driver: GraphDriver): ...
@@ -315,6 +330,9 @@ class EntityEdge(Edge):
             'expired_at': self.expired_at,
             'valid_at': self.valid_at,
             'invalid_at': self.invalid_at,
+            'tags': self.tags,
+            'priority': self.priority,
+            'metadata': json.dumps(self.metadata) if self.metadata else '',
         }
 
         if driver.provider == GraphProvider.KUZU:

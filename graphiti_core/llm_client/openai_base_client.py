@@ -93,6 +93,22 @@ class BaseOpenAIClient(LLMClient):
         """Create a structured completion using the specific client implementation."""
         pass
 
+    def _clean_json_response(self, raw_output: str) -> str:
+        """Clean JSON response by removing markdown code block markers."""
+        cleaned = raw_output.strip()
+
+        # Remove opening markdown code block
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:].strip()
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:].strip()
+
+        # Remove closing markdown code block
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
+        return cleaned
+
     def _convert_messages_to_openai_format(
         self, messages: list[Message]
     ) -> list[ChatCompletionMessageParam]:
@@ -118,7 +134,8 @@ class BaseOpenAIClient(LLMClient):
         response_object = response.output_text
 
         if response_object:
-            return json.loads(response_object)
+            cleaned_response = self._clean_json_response(response_object)
+            return json.loads(cleaned_response)
         elif response_object.refusal:
             raise RefusalError(response_object.refusal)
         else:
@@ -127,7 +144,8 @@ class BaseOpenAIClient(LLMClient):
     def _handle_json_response(self, response: Any) -> dict[str, Any]:
         """Handle JSON response parsing."""
         result = response.choices[0].message.content or '{}'
-        return json.loads(result)
+        cleaned_result = self._clean_json_response(result)
+        return json.loads(cleaned_result)
 
     async def _generate_response(
         self,

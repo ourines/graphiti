@@ -16,6 +16,9 @@ export interface GraphitiConfig {
   apiUrl: string;
   apiHeaders: Record<string, string>;
 
+  // Security
+  requireAuth: boolean; // 是否要求客户端认证
+
   // Optional defaults
   defaultGroupId?: string;
 
@@ -122,13 +125,16 @@ export function loadConfig(): GraphitiConfig {
 
   const config: GraphitiConfig = {
     // MCP Server
-    port: parseInt(process.env.MCP_PORT || '3000', 10),
-    host: process.env.MCP_HOST || 'localhost',
-    transport: (process.env.MCP_TRANSPORT || 'stdio') as 'stdio' | 'http',
+    port: parseInt(process.env.MCP_PORT || '3100', 10),
+    host: process.env.MCP_HOST || '0.0.0.0',
+    transport: (process.env.MCP_TRANSPORT || 'http') as 'stdio' | 'http',
 
     // Graphiti API
     apiUrl: process.env.GRAPHITI_API_URL || '',
     apiHeaders,
+
+    // Security - 默认要求认证（公网部署更安全）
+    requireAuth: process.env.MCP_REQUIRE_AUTH !== 'false',
 
     // Optional
     defaultGroupId: process.env.GRAPHITI_DEFAULT_GROUP_ID,

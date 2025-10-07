@@ -3,33 +3,38 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# 安装 pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # 复制 package 文件
-COPY mcp-http-server/package*.json ./
+COPY mcp-http-server/package.json mcp-http-server/pnpm-lock.yaml ./
 
 # 安装依赖（包括 devDependencies 用于构建）
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # 复制源代码
 COPY mcp-http-server/tsconfig.json ./
 COPY mcp-http-server/src ./src
 
 # 构建
-RUN npm run build
+RUN pnpm build
 
 # Stage 2: Production
 FROM node:20-alpine
 
 WORKDIR /app
 
-# 安装 curl 用于健康检查
-RUN apk add --no-cache curl
+# 安装 curl 和 pnpm
+RUN apk add --no-cache curl && \
+    corepack enable && \
+    corepack prepare pnpm@latest --activate
 
 # 复制 package 文件
-COPY mcp-http-server/package*.json ./
+COPY mcp-http-server/package.json mcp-http-server/pnpm-lock.yaml ./
 
 # 仅安装生产依赖
-RUN npm ci --production && \
-    npm cache clean --force
+RUN pnpm install --prod --frozen-lockfile && \
+    pnpm store prune
 
 # 从构建阶段复制编译后的文件
 COPY --from=builder /app/dist ./dist

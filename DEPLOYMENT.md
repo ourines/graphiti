@@ -1,115 +1,93 @@
-# GraphiTi 公网部署指南
+# GraphiTi 部署指南
 
-本指南帮助你安全地将 GraphiTi API 部署到公网。
+简化的Docker Compose部署方案。
 
-## 📋 目录
+## 快速部署
 
-- [架构说明](#架构说明)
-- [部署步骤](#部署步骤)
-- [安全配置](#安全配置)
-- [客户端配置](#客户端配置)
-- [故障排查](#故障排查)
-
-## 🏗️ 架构说明
-
-```
-┌─────────────────┐
-│  Claude Desktop │  (本地)
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
-│ mcp-http-server │  (本地客户端)
-└────────┬────────┘
-         │ HTTPS + Bearer Token
-         ↓
-┌─────────────────┐
-│  graphiti-api   │  (公网服务器，需要认证保护)
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
-│     Neo4j       │  (内部数据库)
-└─────────────────┘
-```
-
-**关键点：**
-- ✅ `graphiti-api` 是公网暴露的，**必须启用认证**
-- ✅ `mcp-http-server` 是本地客户端，不需要认证
-- ✅ Neo4j 仅内部访问（127.0.0.1）
-
-## 🚀 部署步骤
-
-### 1. 生成安全密钥
-
-```bash
-# 生成 Neo4j 密码
-export NEO4J_PASSWORD=$(openssl rand -base64 24)
-echo "NEO4J_PASSWORD=$NEO4J_PASSWORD"
-
-# 生成 API Token
-export GRAPHITI_API_TOKEN=$(openssl rand -hex 32)
-echo "GRAPHITI_API_TOKEN=$GRAPHITI_API_TOKEN"
-```
-
-### 2. 配置环境变量
-
-创建 `.env` 文件（从 `.env.example` 复制）：
+### 1. 配置环境变量
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，**必须配置**：
+编辑 `.env`：
 
 ```bash
-# Neo4j 密码
-NEO4J_PASSWORD=<上面生成的密码>
+# 必填
+NEO4J_PASSWORD=$(openssl rand -base64 24)
+GOOGLE_API_KEY=your_google_api_key
 
-# LLM Provider
+# 选填
 LLM_PROVIDER=gemini
-GOOGLE_API_KEY=<你的 Gemini API Key>
+MODEL_NAME=gemini-2.5-flash
+EMBEDDER_MODEL_NAME=gemini-embedding-001
 
-# 🔒 API 认证（公网必须启用）
-GRAPHITI_API_TOKEN=<上面生成的 token>
+# 公网部署需启用
+GRAPHITI_API_TOKEN=$(openssl rand -hex 32)
 ```
 
-### 3. 启动服务
+### 2. 启动服务
 
 ```bash
-# 构建并启动
 docker-compose up -d
-
-# 查看日志（确认认证已启用）
-docker-compose logs graphiti-api
 ```
 
-你应该看到：
-```
-🔒 API Authentication enabled
-```
-
-### 4. 测试认证
+### 3. 验证
 
 ```bash
-# 测试公共端点（无需认证）
+# 检查服务状态
+docker-compose ps
+
+# 健康检查
 curl http://localhost:8000/healthcheck
-
-# 测试受保护端点（需要认证）
-curl http://localhost:8000/retrieve/search \
-  -H "Authorization: Bearer your-token" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"test"}'
-
-# 无认证应该返回 401
-curl http://localhost:8000/retrieve/search
+curl http://localhost:3100/health
 ```
 
-### 5. 配置反向代理（生产环境）
+## 服务端口
 
-使用 Nginx 或 Caddy 添加 HTTPS：
+- **Neo4j**: 127.0.0.1:7474 (UI), 127.0.0.1:7687 (Bolt)
+- **GraphiTi API**: 0.0.0.0:8000
+- **MCP HTTP Server**: 0.0.0.0:3000
 
-**Nginx 示例：**
+## 认证说明
+
+### 客户端传递Token
+
+MCP服务器支持客户端通过 `X-GraphiTi-Token` header传递认证token：
+
+```bash
+curl -X POST http://localhost:3100/mcp \
+  -H "Content-Type: application/json" \
+  -H "X-GraphiTi-Token: your-api-token" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+Token会被自动转换为 `Authorization: Bearer` 并传递给GraphiTi API。
+
+### 服务器级认证（可选）
+
+如果需要服务器级别的API认证保护，在 `.env` 中配置：
+
+```bash
+GRAPHITI_API_TOKEN=your_secure_token
+```
+
+## 公网部署
+
+### HTTPS反向代理
+
+**Caddy (推荐):**
+```
+api.your-domain.com {
+    reverse_proxy localhost:8000
+}
+
+mcp.your-domain.com {
+    reverse_proxy localhost:3100
+}
+```
+
+**Nginx:**
 ```nginx
 server {
     listen 443 ssl http2;
@@ -122,224 +100,46 @@ server {
         proxy_pass http://localhost:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-**Caddy 示例（更简单）：**
-```
-api.your-domain.com {
-    reverse_proxy localhost:8000
-}
-```
+### 安全检查清单
 
-## 🔒 安全配置
+- [ ] 设置 `GRAPHITI_API_TOKEN`
+- [ ] 使用 HTTPS
+- [ ] Neo4j仅本地访问 (127.0.0.1)
+- [ ] `.env` 不提交到git
+- [ ] 定期更新密钥
 
-### 认证方式
+## 常见问题
 
-使用 Bearer Token 认证（OAuth 2.1 标准）。
+**401 Unauthorized**
+- 检查 `Authorization: Bearer <token>` header格式
+- 确认token与 `.env` 中的 `GRAPHITI_API_TOKEN` 一致
 
-**配置：**
-```bash
-GRAPHITI_API_TOKEN=<32字节十六进制>
-```
+**服务启动失败**
+- 检查端口是否被占用: `lsof -i :3000,8000,7474,7687`
+- 查看日志: `docker-compose logs`
 
-**客户端使用：**
-```bash
-curl -H "Authorization: Bearer your-token" https://api.example.com/endpoint
-```
+**无法连接GraphiTi API**
+- 确认API服务运行: `docker-compose ps`
+- 检查防火墙规则
 
-### 公共端点
-
-默认公共端点（无需认证）：
-- `/healthcheck` - 健康检查
-- `/docs` - Swagger UI
-- `/openapi.json` - OpenAPI 规范
-
-## 💻 客户端配置
-
-### 本地 MCP 客户端配置
-
-编辑 `mcp-http-server/.env`：
+## 停止服务
 
 ```bash
-# API 地址（使用 HTTPS）
-GRAPHITI_API_URL=https://api.your-domain.com
-
-# 认证 Token（与服务器的 GRAPHITI_API_TOKEN 一致）
-GRAPHITI_API_TOKEN=your-secure-token
+docker-compose down
 ```
 
-### Python 客户端示例
+## 架构
 
-```python
-import requests
-
-# 配置
-API_URL = "https://api.your-domain.com"
-BEARER_TOKEN = "your-secure-bearer-token"
-
-# 请求
-headers = {
-    "Authorization": f"Bearer {BEARER_TOKEN}",
-    "Content-Type": "application/json"
-}
-
-response = requests.post(
-    f"{API_URL}/retrieve/search",
-    headers=headers,
-    json={"query": "test", "group_ids": ["default"]}
-)
-
-print(response.json())
 ```
-
-### JavaScript/TypeScript 客户端
-
-```typescript
-const API_URL = "https://api.your-domain.com";
-const BEARER_TOKEN = "your-secure-bearer-token";
-
-const response = await fetch(`${API_URL}/retrieve/search`, {
-  method: "POST",
-  headers: {
-    "Authorization": `Bearer ${BEARER_TOKEN}`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    query: "test",
-    group_ids: ["default"],
-  }),
-});
-
-const data = await response.json();
-console.log(data);
+Client
+  ↓ X-GraphiTi-Token header
+MCP HTTP Server (port 3100)
+  ↓ Authorization: Bearer token
+GraphiTi API (port 8000)
+  ↓
+Neo4j (port 7687)
 ```
-
-## 🔧 故障排查
-
-### 问题 1: 401 Unauthorized
-
-**症状：**
-```json
-{"detail": "Missing Authorization header"}
-```
-
-**解决：**
-- 检查是否添加了 `Authorization` header
-- 确认 header 格式：`Authorization: Bearer <token>`
-- Bearer 和 token 之间有空格
-
-### 问题 2: Invalid bearer token
-
-**症状：**
-```json
-{"detail": "Invalid bearer token"}
-```
-
-**解决：**
-- 检查 token 是否与服务器配置一致
-- 确认 `.env` 文件中的 `GRAPHITI_API_TOKEN`
-- 重启服务加载新配置：`docker-compose restart graphiti-api`
-
-### 问题 3: 认证未启用
-
-**症状：**
-日志中看到：
-```
-⚠️  API Authentication disabled - not recommended for public deployment
-```
-
-**解决：**
-- 确认 `.env` 中设置了 `GRAPHITI_API_TOKEN`
-- 重启服务：`docker-compose restart graphiti-api`
-
-### 问题 4: CORS 错误
-
-**症状：**
-浏览器控制台显示 CORS 错误
-
-**解决：**
-在 `server/graph_service/main.py` 添加 CORS 中间件：
-
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://your-frontend-domain.com"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-## 📊 监控和日志
-
-### 查看认证日志
-
-```bash
-# 实时日志
-docker-compose logs -f graphiti-api
-
-# 认证相关日志
-docker-compose logs graphiti-api | grep -i auth
-```
-
-### 健康检查
-
-```bash
-# 服务健康状态
-docker-compose ps
-
-# API 健康检查（公共端点）
-curl https://api.your-domain.com/healthcheck
-```
-
-## 🔐 安全最佳实践
-
-### 部署前检查清单
-
-- [ ] ✅ `GRAPHITI_API_TOKEN` 已设置
-- [ ] ✅ 使用 `openssl rand -hex 32` 生成 token
-- [ ] ✅ 使用 HTTPS（不要用 HTTP）
-- [ ] ✅ Neo4j 端口仅本地访问（127.0.0.1）
-- [ ] ✅ 配置防火墙规则
-- [ ] ✅ `.env` 文件不提交到 git
-- [ ] ✅ 定期轮换 token（建议每3个月）
-- [ ] ✅ 监控认证失败日志
-- [ ] ✅ 限制 API 请求速率（使用 Nginx/Caddy）
-
-### 密钥管理
-
-**不要：**
-- ❌ 将 `.env` 提交到 git
-- ❌ 在代码中硬编码 token
-- ❌ 通过 email/聊天分享 token
-- ❌ 使用弱密码或简单 token
-
-**应该：**
-- ✅ 使用环境变量
-- ✅ 使用密钥管理工具（如 AWS Secrets Manager）
-- ✅ 定期轮换密钥
-- ✅ 限制 token 权限和范围
-
-## 📚 相关文档
-
-- [Docker Compose 配置](./docker-compose.yml)
-- [环境变量示例](./.env.example)
-- [MCP 客户端配置](./mcp-http-server/.env.example)
-- [FastAPI 认证中间件](./server/graph_service/auth_middleware.py)
-
-## 🆘 获取帮助
-
-遇到问题？
-1. 检查本文档的故障排查部分
-2. 查看服务日志：`docker-compose logs graphiti-api`
-3. 在 GitHub 上提 issue
-
----
-
-**重要提醒：公网部署必须启用认证！** 🔒

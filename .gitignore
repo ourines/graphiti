@@ -168,3 +168,4 @@ cache.db*
 .DS_Store
 .env.prod
 mcp-http-server/.env.http
+.claude/

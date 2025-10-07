@@ -76,26 +76,18 @@ services:
       dockerfile: mcp-http-server/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:3000"  # MCP HTTP 服务端口
+      - "3100:3100"
     environment:
-      # Transport 模式
-      - MCP_TRANSPORT=http
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=3000
-
-      # GraphiTi API 连接（使用内部网络）
       - GRAPHITI_API_URL=http://graphiti-api:8000
-      # Token由客户端通过X-GraphiTi-Token header透传，无需配置
-
-      # 可选配置
-      - GRAPHITI_DEFAULT_GROUP_ID=${GRAPHITI_DEFAULT_GROUP_ID:-default}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - GRAPHITI_REQUEST_TIMEOUT=${GRAPHITI_REQUEST_TIMEOUT:-30000}
+      - MCP_PORT=3100
+      # 认证设置：默认要求客户端提供token（推荐用于公网部署）
+      # 设置为 'false' 可禁用认证（仅用于本地开发）
+      - MCP_REQUIRE_AUTH=${MCP_REQUIRE_AUTH:-true}
     depends_on:
       graphiti-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3100/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

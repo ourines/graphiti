@@ -1,174 +1,173 @@
-# Configuration Guide
+# 配置指南
 
-## Quick Start: Where to Configure?
+## 配置文件位置
 
 ```
 📁 Graphiti Project
-├── .env                    ← SERVER configuration (Docker Compose)
-│                             Neo4j, LLM, API authentication
+├── .env                    ← 服务器配置 (Docker Compose)
+│                             Neo4j, LLM, API认证
 │
 └── mcp-http-server/
-    ├── .env                ← CLIENT configuration (Optional)
-    │                         API URL, auth token
-    └── CONFIG.md           ← Detailed client config guide
+    └── README.md           ← MCP服务器说明
 ```
 
-## Configuration Files Overview
+## 快速配置
 
-| File | Purpose | Who Uses It | When to Configure |
-|------|---------|-------------|-------------------|
-| **`.env`** (root) | Server config | Docker Compose | ✅ Always (server setup) |
-| **`mcp-http-server/.env`** | Client config | MCP client | ⚠️ Optional (see below) |
-| **Claude Desktop config** | Client config | Claude Desktop | ✅ Recommended (client setup) |
+### 1. 服务器配置
 
----
+**文件**: `.env` (从 `.env.example` 复制)
 
-## 🖥️ Server Configuration
+```bash
+cp .env.example .env
+```
 
-**File**: `.env` (copy from `.env.example` in root)
-
-**Used by**: `docker-compose up`
-
-**Contains**:
-- Neo4j password
-- LLM provider (Gemini, OpenAI, etc.)
-- API authentication (for public deployment)
-
-**Example**:
+**必填**:
 ```bash
 NEO4J_PASSWORD=secure-password
 GOOGLE_API_KEY=your-api-key
-GRAPHITI_API_TOKEN=abc123...
 ```
 
-**When**: Configure BEFORE running `docker-compose up`
+**可选（公网部署）**:
+```bash
+GRAPHITI_API_TOKEN=your-secure-token
+```
 
----
+### 2. 启动服务
 
-## 💻 Client Configuration
+```bash
+docker-compose up -d
+```
 
-**You have 2 options** (pick one):
+### 3. 使用MCP服务器
 
-### Option 1: Claude Desktop Config (Recommended ✅)
+客户端通过 `X-GraphiTi-Token` header传递认证token：
 
-**File**: `~/.config/Claude/claude_desktop_config.json`
+```bash
+curl -X POST http://localhost:3100/mcp \
+  -H "Content-Type: application/json" \
+  -H "X-GraphiTi-Token: your-api-token" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 
-**Contains**:
+## 配置详情
+
+### 环境变量
+
+| 变量 | 必填 | 说明 | 示例 |
+|------|------|------|------|
+| `NEO4J_PASSWORD` | ✅ | Neo4j密码 | `secure-password` |
+| `GOOGLE_API_KEY` | ✅ | Google API Key | `AIza...` |
+| `LLM_PROVIDER` | ⚠️ | LLM提供商 | `gemini` (默认) |
+| `MODEL_NAME` | ⚠️ | 模型名称 | `gemini-2.5-flash` (默认) |
+| `EMBEDDER_MODEL_NAME` | ⚠️ | Embedding模型 | `gemini-embedding-001` (默认) |
+| `GRAPHITI_API_TOKEN` | ⚠️ | API认证token | `openssl rand -hex 32` |
+
+### 生成安全密钥
+
+```bash
+# Neo4j密码
+openssl rand -base64 24
+
+# API Token (公网部署)
+openssl rand -hex 32
+```
+
+## 认证方式
+
+### MCP服务器认证 (默认启用)
+
+**认证流程**：
+
+```
+MCP Client (ultrathink, Claude Desktop)
+  ↓ X-GraphiTi-Token: your-graphiti-token
+MCP HTTP Server (验证token是否存在)
+  ✓ Token存在 → 转发请求
+  ✗ Token缺失 → 返回401错误
+  ↓ Authorization: Bearer your-graphiti-token
+GraphiTi API (验证token有效性)
+```
+
+**安全性**：
+- ✅ **默认启用认证** - 防止未授权访问MCP服务器
+- ✅ **Token透传** - 客户端token直接传递给GraphiTi API
+- ✅ **单点认证** - 只需配置一个GraphiTi API token
+
+**配置选项**：
+
+1. **生产环境**（推荐）- 要求认证：
+   ```bash
+   # docker-compose.yml 或 .env
+   MCP_REQUIRE_AUTH=true  # 默认值
+   ```
+
+2. **本地开发**（仅限内网）- 可选认证：
+   ```bash
+   MCP_REQUIRE_AUTH=false  # 禁用认证检查
+   ```
+
+**MCP客户端配置** (`.mcp.json`):
 ```json
 {
   "mcpServers": {
-    "graphiti": {
-      "command": "npx",
-      "args": ["-y", "@graphiti/mcp-http"],
-      "env": {
-        "GRAPHITI_API_URL": "http://127.0.0.1:8000",
-        "GRAPHITI_API_TOKEN": "your-token-here"
+    "graphiti-mcp": {
+      "type": "http",
+      "url": "http://127.0.0.1:3100/mcp",
+      "headers": {
+        "X-GraphiTi-Token": "your-graphiti-api-token"
       }
     }
   }
 }
 ```
 
-**Pros**: No need for separate `.env` file
+**优势**:
+- 防止未授权访问MCP端点
+- 支持多租户（每个客户端使用自己的token）
+- 无需额外的MCP服务器token
+- Token验证由GraphiTi API统一处理
 
-### Option 2: Local .env File
+### 服务器级认证 (可选)
 
-**File**: `mcp-http-server/.env` (copy from `mcp-http-server/.env.example`)
+在 `.env` 中配置 `GRAPHITI_API_TOKEN`，所有请求使用同一token：
 
-**Contains**:
 ```bash
-GRAPHITI_API_URL=http://localhost:8000
-GRAPHITI_API_TOKEN=your-token-here
+GRAPHITI_API_TOKEN=your-secure-token
 ```
 
-**When**: For local development or if you prefer separate config files
+**使用场景**:
+- 单用户环境
+- 需要API级别保护
 
----
+## 服务端口
 
-## 🔗 Connecting Client to Server
+| 服务 | 端口 | 访问范围 |
+|------|------|----------|
+| Neo4j UI | 7474 | 仅本地 (127.0.0.1) |
+| Neo4j Bolt | 7687 | 仅本地 (127.0.0.1) |
+| GraphiTi API | 8000 | 公开 (0.0.0.0) |
+| MCP HTTP Server | 3000 | 公开 (0.0.0.0) |
 
-The `GRAPHITI_API_TOKEN` (client) **must match** `GRAPHITI_API_TOKEN` (server).
+## 常见问题
 
-**Example**:
+**Q: 是否必须配置 `GRAPHITI_API_TOKEN`?**
+- 本地开发: 可选
+- 公网部署: 强烈推荐
 
-1. **Server** (`.env` in root):
-   ```bash
-   GRAPHITI_API_TOKEN=mysecrettoken123
-   ```
+**Q: 客户端如何传递token?**
+- 通过 `X-GraphiTi-Token` HTTP header
 
-2. **Client** (Claude Desktop config):
-   ```json
-   {
-     "env": {
-       "GRAPHITI_API_TOKEN": "mysecrettoken123"
-     }
-   }
-   ```
+**Q: 如何生成安全token?**
+- `openssl rand -hex 32`
 
----
+**Q: 支持哪些LLM提供商?**
+- Gemini (推荐)
+- OpenAI
+- Anthropic
+- Groq
 
-## 🚀 Quick Setup Steps
+## 相关文档
 
-### 1. Server Setup
-```bash
-# 1. Copy server config
-cp .env.example .env
-
-# 2. Edit .env - set passwords and API keys
-nano .env
-
-# 3. Start server
-docker-compose up -d
-```
-
-### 2. Client Setup (Option 1 - Recommended)
-```bash
-# Edit Claude Desktop config
-code ~/.config/Claude/claude_desktop_config.json
-
-# Add Graphiti MCP server configuration (see above)
-```
-
-### 2. Client Setup (Option 2 - Alternative)
-```bash
-# 1. Copy client config
-cd mcp-http-server
-cp .env.example .env
-
-# 2. Edit .env
-nano .env
-
-# 3. Build client
-npm install
-npm run build
-```
-
----
-
-## ❓ Common Questions
-
-**Q: Why are there two `.env.example` files?**
-- Root `.env.example` = Server configuration
-- `mcp-http-server/.env.example` = Client configuration
-- They configure different components!
-
-**Q: Do I need both `.env` files?**
-- ✅ Root `.env` - Always needed for server
-- ⚠️ `mcp-http-server/.env` - Optional (can use Claude Desktop config instead)
-
-**Q: Can I use the same `.env` for both?**
-- ❌ No - server and client have different configuration needs
-- Keep them separate to avoid confusion
-
-**Q: Where does `GRAPHITI_API_TOKEN` come from?**
-- You generate it: `openssl rand -hex 32`
-- Set it in server's `GRAPHITI_API_TOKEN`
-- Use the same value in client's `GRAPHITI_API_TOKEN`
-
----
-
-## 📚 Detailed Documentation
-
-- **Server deployment**: See `DEPLOYMENT.md`
-- **Client configuration**: See `mcp-http-server/CONFIG.md`
-- **MCP tools usage**: See `mcp-http-server/README.md`
+- [部署指南](./DEPLOYMENT.md)
+- [MCP服务器说明](./mcp-http-server/README.md)
+- [Docker Compose配置](./docker-compose.yml)

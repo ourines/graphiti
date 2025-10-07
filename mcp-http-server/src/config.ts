@@ -4,6 +4,49 @@ import { config as dotenvConfig } from 'dotenv';
 dotenvConfig();
 
 /**
+ * MCP Server Configuration Constants
+ * Based on MCP best practices and security recommendations
+ */
+export const MCP_CONSTANTS = {
+  // Session management
+  SESSION_MAX_AGE_MS: 60 * 60 * 1000, // 1 hour
+  SESSION_CLEANUP_INTERVAL_MS: 5 * 60 * 1000, // 5 minutes
+  MAX_SESSIONS: 1000, // Maximum concurrent sessions
+
+  // Request limits
+  MAX_BODY_SIZE: 5 * 1024 * 1024, // 5MB
+  MAX_CONCURRENT_REQUESTS: 100,
+
+  // Rate limiting (per session/IP)
+  RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: 100, // requests per window
+
+  // Timeouts
+  DEFAULT_REQUEST_TIMEOUT_MS: 30000, // 30 seconds
+  GRACEFUL_SHUTDOWN_TIMEOUT_MS: 30000, // 30 seconds
+
+  // MCP Protocol Error Codes
+  ERROR_CODES: {
+    // Authentication errors (-31xxx)
+    UNAUTHORIZED: -31001,
+    SESSION_NOT_FOUND: -31002,
+    ORIGIN_NOT_ALLOWED: -31003,
+
+    // Rate limiting (-30xxx)
+    RATE_LIMIT_EXCEEDED: -30001,
+
+    // Protocol errors (-32xxx) - JSON-RPC standard
+    PARSE_ERROR: -32700,
+    INVALID_REQUEST: -32600,
+    METHOD_NOT_FOUND: -32601,
+    INVALID_PARAMS: -32602,
+    INTERNAL_ERROR: -32603,
+    SERVER_NOT_INITIALIZED: -32000,
+    REQUEST_TOO_LARGE: -32001,
+  }
+} as const;
+
+/**
  * Configuration interface for the Graphiti MCP Server
  */
 export interface GraphitiConfig {
@@ -17,7 +60,19 @@ export interface GraphitiConfig {
   apiHeaders: Record<string, string>;
 
   // Security
-  requireAuth: boolean; // 是否要求客户端认证
+  requireAuth: boolean;
+  allowedOrigins?: string[]; // CORS allowed origins
+
+  // Resource limits
+  maxSessions: number;
+  maxBodySize: number;
+  sessionMaxAge: number;
+  sessionCleanupInterval: number;
+
+  // Rate limiting
+  rateLimitEnabled: boolean;
+  rateLimitWindow: number;
+  rateLimitMaxRequests: number;
 
   // Optional defaults
   defaultGroupId?: string;
@@ -27,6 +82,7 @@ export interface GraphitiConfig {
 
   // Timeouts
   requestTimeout: number;
+  shutdownTimeout: number;
 }
 
 /**
@@ -123,6 +179,11 @@ export function loadConfig(): GraphitiConfig {
     apiHeaders = parseHeaders(process.env.GRAPHITI_API_HEADERS);
   }
 
+  // Parse allowed origins for CORS
+  const allowedOrigins = process.env.MCP_ALLOWED_ORIGINS
+    ? process.env.MCP_ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    : undefined;
+
   const config: GraphitiConfig = {
     // MCP Server
     port: parseInt(process.env.MCP_PORT || '3100', 10),
@@ -133,8 +194,20 @@ export function loadConfig(): GraphitiConfig {
     apiUrl: process.env.GRAPHITI_API_URL || '',
     apiHeaders,
 
-    // Security - 默认要求认证（公网部署更安全）
+    // Security
     requireAuth: process.env.MCP_REQUIRE_AUTH !== 'false',
+    allowedOrigins,
+
+    // Resource limits
+    maxSessions: parseInt(process.env.MCP_MAX_SESSIONS || String(MCP_CONSTANTS.MAX_SESSIONS), 10),
+    maxBodySize: parseInt(process.env.MCP_MAX_BODY_SIZE || String(MCP_CONSTANTS.MAX_BODY_SIZE), 10),
+    sessionMaxAge: parseInt(process.env.MCP_SESSION_MAX_AGE || String(MCP_CONSTANTS.SESSION_MAX_AGE_MS), 10),
+    sessionCleanupInterval: parseInt(process.env.MCP_SESSION_CLEANUP_INTERVAL || String(MCP_CONSTANTS.SESSION_CLEANUP_INTERVAL_MS), 10),
+
+    // Rate limiting
+    rateLimitEnabled: process.env.MCP_RATE_LIMIT_ENABLED !== 'false',
+    rateLimitWindow: parseInt(process.env.MCP_RATE_LIMIT_WINDOW || String(MCP_CONSTANTS.RATE_LIMIT_WINDOW_MS), 10),
+    rateLimitMaxRequests: parseInt(process.env.MCP_RATE_LIMIT_MAX_REQUESTS || String(MCP_CONSTANTS.RATE_LIMIT_MAX_REQUESTS), 10),
 
     // Optional
     defaultGroupId: process.env.GRAPHITI_DEFAULT_GROUP_ID,
@@ -142,8 +215,9 @@ export function loadConfig(): GraphitiConfig {
     // Logging
     logLevel: (process.env.LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error',
 
-    // Timeout
-    requestTimeout: parseInt(process.env.GRAPHITI_REQUEST_TIMEOUT || '30000', 10),
+    // Timeouts
+    requestTimeout: parseInt(process.env.GRAPHITI_REQUEST_TIMEOUT || String(MCP_CONSTANTS.DEFAULT_REQUEST_TIMEOUT_MS), 10),
+    shutdownTimeout: parseInt(process.env.MCP_SHUTDOWN_TIMEOUT || String(MCP_CONSTANTS.GRACEFUL_SHUTDOWN_TIMEOUT_MS), 10),
   };
 
   validateConfig(config);

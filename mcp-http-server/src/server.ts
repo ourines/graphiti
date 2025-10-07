@@ -7,12 +7,15 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { Hono, type Context } from 'hono';
 import { type HttpBindings } from '@hono/node-server';
-import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import * as http from 'http';
+import { type IncomingMessage, type ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import type { GraphitiConfig, Logger } from './config.js';
+import { MCP_CONSTANTS } from './config.js';
 import { GraphitiClient } from './client.js';
 import { TOOLS, type ToolInputs } from './tools.js';
 import { ContextManager } from './context-manager.js';
+import { RateLimiter } from './rate-limiter.js';
 
 /**
  * Union type for all possible tool results
@@ -423,6 +426,16 @@ function isRenameTagParams(args: unknown): args is ToolInputs['rename_tag'] {
 }
 
 /**
+ * Custom error for session limit exceeded
+ */
+class SessionLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionLimitError';
+  }
+}
+
+/**
  * Session state for MCP protocol
  */
 interface SessionState {
@@ -447,6 +460,17 @@ export class GraphitiMCPServer {
   private sessions: Map<string, SessionState> = new Map();
   private sessionCleanupInterval: NodeJS.Timeout | null = null;
 
+  // Rate limiting
+  private rateLimiter: RateLimiter | null = null;
+  private rateLimitCleanupInterval: NodeJS.Timeout | null = null;
+
+  // Connection tracking
+  private activeRequests = 0;
+  private isShuttingDown = false;
+
+  // HTTP server instance
+  private httpServer: http.Server | null = null;
+
   constructor(
     private config: GraphitiConfig,
     logger: Logger
@@ -470,10 +494,25 @@ export class GraphitiMCPServer {
 
     this.setupHandlers();
 
-    // Setup session cleanup (remove inactive sessions after 1 hour)
+    // Setup session cleanup
     this.sessionCleanupInterval = setInterval(() => {
       this.cleanupInactiveSessions();
-    }, 5 * 60 * 1000); // Check every 5 minutes
+    }, config.sessionCleanupInterval);
+
+    // Setup rate limiter if enabled
+    if (config.rateLimitEnabled) {
+      this.rateLimiter = new RateLimiter(
+        config.rateLimitWindow,
+        config.rateLimitMaxRequests
+      );
+
+      // Cleanup rate limiter data every 5 minutes
+      this.rateLimitCleanupInterval = setInterval(() => {
+        this.rateLimiter?.cleanup();
+      }, 5 * 60 * 1000);
+
+      this.logger.info(`Rate limiting enabled: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindow / 60000} minutes`);
+    }
   }
 
   /**
@@ -482,17 +521,47 @@ export class GraphitiMCPServer {
   async shutdown(): Promise<void> {
     this.logger.info('Shutting down MCP server...');
 
-    // Clear cleanup interval
+    // Set shutdown flag to reject new connections
+    this.isShuttingDown = true;
+
+    // Stop accepting new connections
+    if (this.httpServer) {
+      this.httpServer.close(() => {
+        this.logger.debug('HTTP server stopped accepting new connections');
+      });
+    }
+
+    // Clear cleanup intervals
     if (this.sessionCleanupInterval) {
       clearInterval(this.sessionCleanupInterval);
       this.sessionCleanupInterval = null;
     }
 
+    if (this.rateLimitCleanupInterval) {
+      clearInterval(this.rateLimitCleanupInterval);
+      this.rateLimitCleanupInterval = null;
+    }
+
+    // Wait for active requests to complete (with timeout)
+    const shutdownStart = Date.now();
+    while (this.activeRequests > 0 && Date.now() - shutdownStart < this.config.shutdownTimeout) {
+      this.logger.info(`Waiting for ${this.activeRequests} active requests to complete...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    if (this.activeRequests > 0) {
+      this.logger.warn(`Forced shutdown with ${this.activeRequests} active requests remaining`);
+    }
+
     // Close all sessions
     for (const [sessionId, session] of this.sessions.entries()) {
       this.logger.debug(`Closing session: ${sessionId}`);
-      session.transport.close();
-      session.server.close();
+      try {
+        session.transport.close();
+        session.server.close();
+      } catch (error) {
+        this.logger.error(`Error closing session ${sessionId}:`, error);
+      }
     }
 
     this.sessions.clear();
@@ -504,17 +573,23 @@ export class GraphitiMCPServer {
    */
   private cleanupInactiveSessions(): void {
     const now = new Date();
-    const maxAge = 60 * 60 * 1000; // 1 hour
+    const maxAge = this.config.sessionMaxAge;
 
     for (const [sessionId, session] of this.sessions.entries()) {
       const age = now.getTime() - session.lastActivity.getTime();
       if (age > maxAge) {
-        this.logger.info(`Cleaning up inactive session: ${sessionId}`);
-        session.transport.close();
-        session.server.close();
+        this.logger.info(`Cleaning up inactive session: ${sessionId} (age: ${Math.round(age / 60000)}min)`);
+        try {
+          session.transport.close();
+          session.server.close();
+        } catch (error) {
+          this.logger.error(`Error cleaning up session ${sessionId}:`, error);
+        }
         this.sessions.delete(sessionId);
       }
     }
+
+    this.logger.debug(`Session cleanup: ${this.sessions.size} active sessions`);
   }
 
   /**
@@ -530,6 +605,19 @@ export class GraphitiMCPServer {
       const session = this.sessions.get(sessionId)!;
       session.lastActivity = new Date();
       return { sessionId, session, isNew: false };
+    }
+
+    // Check session limit before creating new session
+    if (this.sessions.size >= this.config.maxSessions) {
+      // Clean up inactive sessions first
+      this.cleanupInactiveSessions();
+
+      // If still at limit, reject
+      if (this.sessions.size >= this.config.maxSessions) {
+        throw new SessionLimitError(
+          `Maximum number of sessions (${this.config.maxSessions}) reached. Please try again later or reuse an existing session.`
+        );
+      }
     }
 
     // Create new session
@@ -962,13 +1050,26 @@ export class GraphitiMCPServer {
       this.logger.info(`GraphiTi API health check passed (${healthStatus.latency}ms)`);
     }
 
-    // Track active connections
-    let activeConnections = 0;
-
     // Handle MCP request with session management
     const handleMcpRequest = async (req: IncomingMessage, res: ServerResponse) => {
       this.logger.info('New MCP request received');
-      activeConnections++;
+
+      // Reject new requests during shutdown
+      if (this.isShuttingDown) {
+        this.logger.warn('Rejecting request: server is shutting down');
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          error: {
+            code: MCP_CONSTANTS.ERROR_CODES.INTERNAL_ERROR,
+            message: 'Server is shutting down',
+          },
+          id: null,
+        }));
+        return;
+      }
+
+      this.activeRequests++;
 
       try {
         // Extract token from request header (client pass-through)
@@ -984,7 +1085,7 @@ export class GraphitiMCPServer {
           res.end(JSON.stringify({
             jsonrpc: '2.0',
             error: {
-              code: -32001,
+              code: MCP_CONSTANTS.ERROR_CODES.UNAUTHORIZED,
               message: 'Unauthorized: X-GraphiTi-Token header is required',
               data: {
                 hint: 'Provide your GraphiTi API token via X-GraphiTi-Token header'
@@ -1001,8 +1102,106 @@ export class GraphitiMCPServer {
           this.logger.debug('Using client-provided token');
         }
 
+        // Origin header validation for CSRF protection
+        if (this.config.allowedOrigins && this.config.allowedOrigins.length > 0) {
+          const origin = req.headers['origin'] as string | undefined;
+          const referer = req.headers['referer'] as string | undefined;
+
+          // Check Origin header (preferred for CORS)
+          if (origin) {
+            const isAllowed = this.config.allowedOrigins.some(allowed => {
+              if (allowed === '*') return true;
+              return origin === allowed || origin.startsWith(allowed);
+            });
+
+            if (!isAllowed) {
+              this.logger.warn(`Blocked request from unauthorized origin: ${origin}`);
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                jsonrpc: '2.0',
+                error: {
+                  code: MCP_CONSTANTS.ERROR_CODES.ORIGIN_NOT_ALLOWED,
+                  message: 'Origin not allowed',
+                  data: {
+                    origin,
+                    hint: 'Configure MCP_ALLOWED_ORIGINS to allow this origin'
+                  }
+                },
+                id: null,
+              }));
+              return;
+            }
+          }
+          // Fallback to Referer header if Origin is not present
+          else if (referer) {
+            try {
+              const refererUrl = new URL(referer);
+              const refererOrigin = `${refererUrl.protocol}//${refererUrl.host}`;
+
+              const isAllowed = this.config.allowedOrigins.some(allowed => {
+                if (allowed === '*') return true;
+                return refererOrigin === allowed || refererOrigin.startsWith(allowed);
+              });
+
+              if (!isAllowed) {
+                this.logger.warn(`Blocked request from unauthorized referer: ${refererOrigin}`);
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  jsonrpc: '2.0',
+                  error: {
+                    code: MCP_CONSTANTS.ERROR_CODES.ORIGIN_NOT_ALLOWED,
+                    message: 'Origin not allowed',
+                    data: {
+                      origin: refererOrigin,
+                      hint: 'Configure MCP_ALLOWED_ORIGINS to allow this origin'
+                    }
+                  },
+                  id: null,
+                }));
+                return;
+              }
+            } catch (error) {
+              this.logger.warn('Invalid Referer header:', referer);
+            }
+          }
+          // If neither Origin nor Referer is present, log a warning but allow the request
+          // (some legitimate clients may not send these headers)
+          else {
+            this.logger.debug('No Origin or Referer header present in request');
+          }
+        }
+
         // Extract session ID from header
         const sessionIdHeader = req.headers['mcp-session-id'] as string | undefined;
+
+        // Rate limiting check
+        if (this.config.rateLimitEnabled && this.rateLimiter) {
+          const clientIp = req.socket.remoteAddress || 'unknown';
+          const rateLimitKey = `${req.headers['mcp-session-id'] || 'no-session'}-${clientIp}`;
+
+          if (!this.rateLimiter.isAllowed(rateLimitKey)) {
+            const retryAfter = this.rateLimiter.getRetryAfter(rateLimitKey);
+            this.logger.warn(`Rate limit exceeded for ${rateLimitKey}`);
+            res.writeHead(429, {
+              'Content-Type': 'application/json',
+              'Retry-After': retryAfter.toString(),
+            });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: MCP_CONSTANTS.ERROR_CODES.RATE_LIMIT_EXCEEDED,
+                message: 'Rate limit exceeded',
+                data: {
+                  retryAfter,
+                  limit: this.config.rateLimitMaxRequests,
+                  window: this.config.rateLimitWindow,
+                }
+              },
+              id: null,
+            }));
+            return;
+          }
+        }
 
         // Normalize Accept header for compatibility
         // MCP requires: "application/json, text/event-stream"
@@ -1014,9 +1213,32 @@ export class GraphitiMCPServer {
           req.headers['accept'] = 'application/json, text/event-stream';
         }
 
-        // Read request body
+        // Read request body with size limit
         const chunks: Buffer[] = [];
+        let totalSize = 0;
+
         for await (const chunk of req) {
+          totalSize += chunk.length;
+
+          // Check body size limit
+          if (totalSize > this.config.maxBodySize) {
+            this.logger.warn(`Request body too large: ${totalSize} bytes (max: ${this.config.maxBodySize})`);
+            res.writeHead(413, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: MCP_CONSTANTS.ERROR_CODES.REQUEST_TOO_LARGE,
+                message: 'Request body too large',
+                data: {
+                  maxSize: this.config.maxBodySize,
+                  receivedSize: totalSize,
+                }
+              },
+              id: null,
+            }));
+            return;
+          }
+
           chunks.push(chunk);
         }
         const bodyText = Buffer.concat(chunks).toString();
@@ -1051,18 +1273,39 @@ export class GraphitiMCPServer {
         this.logger.error('MCP request handling error:', errorMessage);
 
         if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32603,
-              message: errorMessage,
-            },
-            id: null,
-          }));
+          // Handle session limit exceeded
+          if (error instanceof SessionLimitError) {
+            res.writeHead(503, {
+              'Content-Type': 'application/json',
+              'Retry-After': '60' // Suggest retry after 60 seconds
+            });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: MCP_CONSTANTS.ERROR_CODES.INTERNAL_ERROR,
+                message: 'Service temporarily unavailable: ' + errorMessage,
+                data: {
+                  reason: 'session_limit_exceeded',
+                  retryAfter: 60
+                }
+              },
+              id: null,
+            }));
+          } else {
+            // Generic internal error
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              error: {
+                code: MCP_CONSTANTS.ERROR_CODES.INTERNAL_ERROR,
+                message: errorMessage,
+              },
+              id: null,
+            }));
+          }
         }
       } finally {
-        activeConnections--;
+        this.activeRequests--;
         this.requestToken = undefined;
       }
     };
@@ -1085,7 +1328,7 @@ export class GraphitiMCPServer {
           transport: 'streamable-http',
           port: this.config.port,
           uptime: process.uptime(),
-          activeConnections: activeConnections,
+          activeRequests: this.activeRequests,
           activeSessions: this.sessions.size,
         },
       });
@@ -1112,17 +1355,52 @@ export class GraphitiMCPServer {
       });
     });
 
+    // DELETE endpoint for explicit session termination
+    app.delete('/sessions/:sessionId', (c: Context) => {
+      const sessionId = c.req.param('sessionId');
+
+      if (!sessionId) {
+        return c.json({
+          error: 'Session ID is required',
+        }, 400);
+      }
+
+      const session = this.sessions.get(sessionId);
+      if (!session) {
+        return c.json({
+          error: 'Session not found',
+        }, 404);
+      }
+
+      // Close the session
+      try {
+        session.server.close();
+      } catch (error) {
+        this.logger.warn(`Error closing server for session ${sessionId}:`, error);
+      }
+
+      // Remove from sessions map
+      this.sessions.delete(sessionId);
+      this.logger.info(`Session ${sessionId} explicitly terminated`);
+
+      return c.json({
+        message: 'Session terminated successfully',
+        sessionId,
+      });
+    });
+
     this.logger.info(`MCP HTTP server listening on http://${this.config.host}:${this.config.port}`);
     this.logger.info(`GraphiTi API: ${this.config.apiUrl}`);
     this.logger.info(`Authentication: ${this.config.requireAuth ? 'REQUIRED (X-GraphiTi-Token header)' : 'Optional'}`);
     this.logger.info('Available endpoints:');
-    this.logger.info('  POST /mcp - MCP protocol endpoint (Streamable HTTP)');
-    this.logger.info('  GET  /health - Health check');
-    this.logger.info('  GET  /debug/tools - List available tools');
-    this.logger.info('  GET  /debug/sessions - List active sessions');
+    this.logger.info('  POST   /mcp - MCP protocol endpoint (Streamable HTTP)');
+    this.logger.info('  GET    /health - Health check');
+    this.logger.info('  GET    /debug/tools - List available tools');
+    this.logger.info('  GET    /debug/sessions - List active sessions');
+    this.logger.info('  DELETE /sessions/:sessionId - Terminate a session');
 
     // Create HTTP server that routes /mcp to native handler, others to Hono
-    const server = createServer(async (req, res) => {
+    this.httpServer = http.createServer(async (req, res) => {
       const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
       if (url.pathname === '/mcp' && req.method === 'POST') {
@@ -1172,6 +1450,16 @@ export class GraphitiMCPServer {
       }
     });
 
-    server.listen(this.config.port, this.config.host);
+    // Setup graceful shutdown handlers
+    const gracefulShutdown = async (signal: string) => {
+      this.logger.info(`${signal} received, starting graceful shutdown...`);
+      await this.shutdown();
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    this.httpServer.listen(this.config.port, this.config.host);
   }
 }

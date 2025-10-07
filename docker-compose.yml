@@ -95,6 +95,44 @@ services:
     networks:
       - graphiti-network
 
+  neo4j-backup:
+    build:
+      context: .
+      dockerfile: neo4j-backup/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Neo4j 连接配置
+      - NEO4J_HOST=neo4j
+      - NEO4J_BOLT_PORT=7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_DATABASE=neo4j
+
+      # Cloudflare R2 存储配置
+      # 必需配置 - 请在 .env 文件中设置
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-graphiti-neo4j-backup}
+
+      # 备份配置
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}  # 默认每天凌晨2点
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}  # 保留7天
+      - BACKUP_COMPRESSION=${BACKUP_COMPRESSION:-true}  # 启用压缩
+      - BACKUP_PREFIX=${BACKUP_PREFIX:-graphiti-backups}  # R2 中的前缀路径
+      - RUN_IMMEDIATE_BACKUP=${RUN_IMMEDIATE_BACKUP:-false}  # 启动时立即备份
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep crond || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - graphiti-network
+
 volumes:
   neo4j_prod_data:
     driver: local

@@ -8,8 +8,10 @@ import os
 import sys
 import gzip
 import shutil
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -33,6 +35,16 @@ BACKUP_DIR = Path('/backups')
 BACKUP_RETENTION_DAYS = int(os.getenv('BACKUP_RETENTION_DAYS', '7'))
 COMPRESSION_ENABLED = os.getenv('BACKUP_COMPRESSION', 'true').lower() == 'true'
 BACKUP_PREFIX = os.getenv('BACKUP_PREFIX', 'neo4j-backup')
+
+
+@dataclass
+class BackupResult:
+    success: bool
+    remote_key: Optional[str]
+    started_at: datetime
+    completed_at: Optional[datetime]
+    size_bytes: Optional[int]
+    error: Optional[str] = None
 
 
 def log(message: str, level: str = 'INFO'):
@@ -346,69 +358,72 @@ def verify_r2_connection() -> bool:
         return False
 
 
-def perform_backup():
-    """Main backup process"""
+def perform_backup() -> BackupResult:
+    """Main backup process returning structured results"""
+    start_time = datetime.now()
+    remote_key: Optional[str] = None
+    size_bytes: Optional[int] = None
+
     log("=" * 60)
     log("Starting Neo4j backup process")
     log("=" * 60)
 
-    # Validate configuration
     if not validate_config():
-        log("Configuration validation failed, aborting", 'ERROR')
-        return False
+        message = 'Configuration validation failed, aborting'
+        log(message, 'ERROR')
+        return BackupResult(False, None, start_time, datetime.now(), None, message)
 
-    # Verify R2 connection
     if not verify_r2_connection():
-        log("R2 connection verification failed, aborting", 'ERROR')
-        return False
+        message = 'R2 connection verification failed, aborting'
+        log(message, 'ERROR')
+        return BackupResult(False, None, start_time, datetime.now(), None, message)
 
-    # Create backup directory
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Generate backup filename with timestamp
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     backup_name = f"{NEO4J_DATABASE}_{timestamp}"
 
-    # Create export
     export_file = BACKUP_DIR / f"{backup_name}.cypher"
     if not create_neo4j_export(export_file):
-        log("Backup failed at export stage", 'ERROR')
-        return False
+        message = 'Backup failed at export stage'
+        log(message, 'ERROR')
+        return BackupResult(False, None, start_time, datetime.now(), None, message)
 
-    # Compress if enabled
+    upload_file = export_file
     if COMPRESSION_ENABLED:
         compressed_file = BACKUP_DIR / f"{backup_name}.cypher.gz"
         if not compress_file(export_file, compressed_file):
-            log("Backup failed at compression stage", 'ERROR')
-            return False
+            message = 'Backup failed at compression stage'
+            log(message, 'ERROR')
+            return BackupResult(False, None, start_time, datetime.now(), None, message)
         upload_file = compressed_file
-    else:
-        upload_file = export_file
 
-    # Upload to R2
+    size_bytes = upload_file.stat().st_size
     remote_key = f"{BACKUP_PREFIX}/{upload_file.name}"
-    if not upload_to_r2(upload_file, remote_key):
-        log("Backup failed at upload stage", 'ERROR')
-        return False
 
-    # Cleanup local backup file
-    upload_file.unlink()
-    log(f"Local backup file removed: {upload_file}")
+    try:
+        if not upload_to_r2(upload_file, remote_key):
+            message = 'Backup failed at upload stage'
+            log(message, 'ERROR')
+            return BackupResult(False, None, start_time, datetime.now(), size_bytes, message)
+    finally:
+        if upload_file.exists():
+            upload_file.unlink()
+            log(f"Local backup file removed: {upload_file}")
 
-    # Cleanup old backups
     cleanup_old_backups()
 
     log("=" * 60)
     log("Backup completed successfully!")
     log("=" * 60)
 
-    return True
+    return BackupResult(True, remote_key, start_time, datetime.now(), size_bytes)
 
 
 if __name__ == '__main__':
     try:
-        success = perform_backup()
-        sys.exit(0 if success else 1)
+        result = perform_backup()
+        sys.exit(0 if result.success else 1)
     except KeyboardInterrupt:
         log("Backup interrupted by user", 'WARN')
         sys.exit(1)

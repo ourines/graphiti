@@ -15,7 +15,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     boto3 \
     botocore \
-    neo4j
+    croniter \
+    fastapi \
+    neo4j \
+    "uvicorn[standard]"
 
 # Install Neo4j Cypher Shell
 RUN wget https://dist.neo4j.org/cypher-shell/cypher-shell-5.26.0.zip \
@@ -25,9 +28,8 @@ RUN wget https://dist.neo4j.org/cypher-shell/cypher-shell-5.26.0.zip \
     && ln -s /opt/cypher-shell/bin/cypher-shell /usr/local/bin/cypher-shell \
     && rm -rf cypher-shell-5.26.0.zip
 
-# Copy backup scripts
-COPY neo4j-backup/backup.py /app/backup.py
-COPY neo4j-backup/entrypoint.sh /app/entrypoint.sh
+# Copy backup service files
+COPY neo4j-backup/ /app/
 
 # Make scripts executable
 RUN chmod +x /app/backup.py /app/entrypoint.sh

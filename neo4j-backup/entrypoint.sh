@@ -56,14 +56,16 @@ if [ "${RUN_IMMEDIATE_BACKUP:-false}" = "true" ]; then
     echo "[INFO] Immediate backup completed"
 fi
 
-# Setup cron schedule
-CRON_SCHEDULE="${BACKUP_SCHEDULE:-0 2 * * *}"
+# Ensure configuration file exists and cron schedule is applied
+python3 - <<'PY'
+from config_manager import ensure_config, apply_cron_schedule
 
-# Write crontab
-echo "$CRON_SCHEDULE /usr/local/bin/python3 /app/backup.py > /proc/1/fd/1 2>&1" > /var/spool/cron/crontabs/root
-chmod 600 /var/spool/cron/crontabs/root
+settings = ensure_config()
+apply_cron_schedule(settings)
+print('[INFO] Backup settings initialised via config_manager')
+PY
 
-echo "[INFO] Cron schedule configured: $CRON_SCHEDULE"
+echo "[INFO] Cron schedule configured via config_manager"
 echo "[INFO] Next backup will run at configured time"
 echo "[INFO] Starting cron daemon..."
 echo "[INFO] ============================================================"
@@ -71,6 +73,10 @@ echo "[INFO] ============================================================"
 # Start cron in background
 crond
 
-# Keep container alive and tail cron logs
-echo "[INFO] Backup service is running. Waiting for scheduled backups..."
-tail -f /dev/null
+echo "[INFO] Launching Backup API (port 8080)"
+uvicorn api:app --host 0.0.0.0 --port 8080 --log-level info &
+UVICORN_PID=$!
+
+trap 'echo "[INFO] Shutting down..."; kill -TERM $UVICORN_PID 2>/dev/null || true; exit 0' SIGTERM SIGINT
+
+wait $UVICORN_PID

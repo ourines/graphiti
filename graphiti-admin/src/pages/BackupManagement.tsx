@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import axios from 'axios'
 
 import type { BackupHistoryEntry, BackupSettingsPayload } from '@/api/types'
 import BackupHistory from '@/components/backup/BackupHistory'
@@ -8,6 +9,13 @@ import BackupSettings from '@/components/backup/BackupSettings'
 import ManualBackup from '@/components/backup/ManualBackup'
 import { useBackupHistory, useBackupSettings, useDeleteBackup, useDownloadBackup, useTriggerManualBackup, useUpdateBackupSettings, useBackupStatus } from '@/hooks/useBackup'
 import { formatRelativeTime } from '@/utils/formatters'
+
+const getTriggerErrorMessage = (error: unknown) => {
+  if (axios.isAxiosError(error) && error.response?.status === 409) {
+    return 'A backup is already running. Try again after it completes.'
+  }
+  return 'Failed to trigger backup'
+}
 
 const BackupManagement = () => {
   const { data: settings, isLoading: settingsLoading } = useBackupSettings()
@@ -51,7 +59,7 @@ const BackupManagement = () => {
     } catch (error) {
       console.error(error)
       setFeedbackType('error')
-      setFeedback('Failed to trigger backup')
+      setFeedback(getTriggerErrorMessage(error))
     }
   }
 

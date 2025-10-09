@@ -9,12 +9,7 @@ import {
   triggerManualBackup,
   updateBackupSettings,
 } from '@/api/backup'
-import type {
-  BackupHistoryEntry,
-  BackupServiceStatus,
-  BackupSettingsPayload,
-  ManualBackupRequest,
-} from '@/api/types'
+import type { BackupHistoryEntry, BackupSettingsPayload, ManualBackupRequest } from '@/api/types'
 
 export const useBackupSettings = () =>
   useQuery({

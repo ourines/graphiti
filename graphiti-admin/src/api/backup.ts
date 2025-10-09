@@ -20,8 +20,8 @@ export const updateBackupSettings = async (
 }
 
 export const getBackupHistory = async (): Promise<BackupHistoryEntry[]> => {
-  const response = await backupClient.get<{ backups: BackupHistoryEntry[] }>('/api/backups')
-  return response.data.backups
+  const response = await backupClient.get<{ backups?: BackupHistoryEntry[] }>('/api/backups')
+  return response.data.backups ?? []
 }
 
 export const triggerManualBackup = async (

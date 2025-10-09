@@ -85,9 +85,9 @@ export const graphPayloadToGraphology = (payload: GraphPayload) => {
         color: node.color,
         size: node.size ?? 12,
         groupId: node.groupId,
-        category: (node as any).category,
-        priority: (node as any).priority,
-        factId: (node as any).factId,
+        category: node.category,
+        priority: node.priority,
+        factId: node.factId,
       }
       graph.addNode(node.id, attributes)
     }

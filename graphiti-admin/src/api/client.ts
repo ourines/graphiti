@@ -25,9 +25,9 @@ const attachAuthHeader = (config: InternalAxiosRequestConfig) => {
 graphitiClient.interceptors.request.use(attachAuthHeader)
 backupClient.interceptors.request.use(attachAuthHeader)
 
-const handleError = (label: string) => (error: any) => {
+const handleError = (label: string) => (error: unknown) => {
   console.error(`${label} error`, error)
-  if (error?.response?.status === 401) {
+  if (axios.isAxiosError(error) && error.response?.status === 401) {
     useAuthStore.getState().clearAuth()
   }
   return Promise.reject(error)

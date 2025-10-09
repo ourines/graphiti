@@ -39,6 +39,19 @@ const NodeDetails = ({ selection, relatedFacts, isLoading, onClose }: NodeDetail
   const factDetails = category === 'fact' && factId ? relatedFacts.find((fact) => fact.uuid === factId) : null
   const entityRelationships = category === 'entity' ? relatedFacts : factDetails ? [factDetails] : []
 
+  const dedupedRelationships = (() => {
+    const seen = new Set<string>()
+    const results: FactResult[] = []
+    entityRelationships.forEach((fact) => {
+      const key = fact?.uuid ?? fact.fact
+      if (!seen.has(key)) {
+        seen.add(key)
+        results.push(fact)
+      }
+    })
+    return results
+  })()
+
   return (
     <Card
       title={label}
@@ -67,7 +80,7 @@ const NodeDetails = ({ selection, relatedFacts, isLoading, onClose }: NodeDetail
       )}
 
       <div className="space-y-4">
-        {entityRelationships.map((fact) => (
+        {dedupedRelationships.map((fact) => (
           <div key={fact.uuid} className="rounded-lg border border-slate-800 bg-background/60 p-4">
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold text-slate-100">{fact.fact}</div>

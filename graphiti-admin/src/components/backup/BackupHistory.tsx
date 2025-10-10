@@ -3,7 +3,7 @@ import { Download, Trash2 } from 'lucide-react'
 import type { BackupHistoryEntry } from '@/api/types'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
-import { formatDateTime, formatFileSize } from '@/utils/formatters'
+import { formatDateTime, formatFileSize, formatNumber } from '@/utils/formatters'
 
 type BackupHistoryProps = {
   history: BackupHistoryEntry[] | undefined
@@ -38,6 +38,8 @@ const BackupHistory = ({ history, isLoading, onDownload, onDelete, isDeletingId 
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Started</th>
                 <th className="px-3 py-2">Completed</th>
+                <th className="px-3 py-2">Nodes</th>
+                <th className="px-3 py-2">Relationships</th>
                 <th className="px-3 py-2">Size</th>
                 <th className="px-3 py-2" aria-label="actions" />
               </tr>
@@ -53,6 +55,8 @@ const BackupHistory = ({ history, isLoading, onDownload, onDelete, isDeletingId 
                   </td>
                   <td className="px-3 py-3 text-slate-300">{formatDateTime(entry.started_at)}</td>
                   <td className="px-3 py-3 text-slate-300">{formatDateTime(entry.completed_at)}</td>
+                  <td className="px-3 py-3 text-slate-300">{formatNumber(entry.node_count ?? null)}</td>
+                  <td className="px-3 py-3 text-slate-300">{formatNumber(entry.relationship_count ?? null)}</td>
                   <td className="px-3 py-3 text-slate-300">{formatFileSize(entry.size_bytes)}</td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">

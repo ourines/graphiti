@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Database, LineChart, ServerCog, Shield, X } from 'lucide-react'
+import { Database, History, LineChart, ServerCog, Shield, X } from 'lucide-react'
 
 import Button from '@/components/ui/Button'
 import { useUIStore } from '@/store/uiStore'
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LineChart },
   { to: '/graph', label: 'Graph', icon: Database },
   { to: '/backups', label: 'Backups', icon: ServerCog },
+  { to: '/restore', label: 'Restore', icon: History },
   { to: '/settings', label: 'Settings', icon: Shield },
 ]
 

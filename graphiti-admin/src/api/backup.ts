@@ -4,6 +4,8 @@ import type {
   BackupSettingsPayload,
   BackupTriggerResponse,
   ManualBackupRequest,
+  RestoreStatusPayload,
+  RestoreTriggerResponse,
 } from './types'
 import { backupClient } from './client'
 
@@ -20,8 +22,19 @@ export const updateBackupSettings = async (
 }
 
 export const getBackupHistory = async (): Promise<BackupHistoryEntry[]> => {
-  const response = await backupClient.get<{ backups?: BackupHistoryEntry[] }>('/api/backups')
-  return response.data.backups ?? []
+  const response = await backupClient.get<BackupHistoryEntry[] | { backups?: BackupHistoryEntry[] }>(
+    '/api/backups',
+  )
+
+  if (Array.isArray(response.data)) {
+    return response.data
+  }
+
+  if (response.data?.backups && Array.isArray(response.data.backups)) {
+    return response.data.backups
+  }
+
+  return []
 }
 
 export const triggerManualBackup = async (
@@ -39,10 +52,22 @@ export const downloadBackup = async (backupId: string): Promise<Blob> => {
 }
 
 export const deleteBackup = async (backupId: string): Promise<void> => {
-  await backupClient.delete(`/api/backups/${backupId}`)
+  const encoded = encodeURIComponent(backupId)
+  await backupClient.delete(`/api/backups/${encoded}`)
 }
 
 export const getBackupStatus = async (): Promise<BackupServiceStatus> => {
   const response = await backupClient.get<BackupServiceStatus>('/api/status')
+  return response.data
+}
+
+export const triggerRestore = async (backupId: string): Promise<RestoreTriggerResponse> => {
+  const encoded = encodeURIComponent(backupId)
+  const response = await backupClient.post<RestoreTriggerResponse>(`/api/backups/${encoded}/restore`)
+  return response.data
+}
+
+export const getRestoreStatus = async (): Promise<RestoreStatusPayload> => {
+  const response = await backupClient.get<RestoreStatusPayload>('/api/restore/status')
   return response.data
 }

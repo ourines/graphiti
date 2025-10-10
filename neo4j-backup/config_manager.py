@@ -19,6 +19,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     'lastStatus': 'idle',
     'lastBackupId': None,
     'lastError': None,
+    'restoreStartedAt': None,
+    'restoreCompletedAt': None,
+    'lastRestoreStatus': 'idle',
+    'lastRestoreId': None,
+    'lastRestoreError': None,
+    'restoreStatementsApplied': None,
+    'restoreTotalStatements': None,
+    'restorePhase': 'idle',
+    'restoreProgress': 0,
 }
 
 PERSISTED_KEYS = set(DEFAULT_SETTINGS.keys())

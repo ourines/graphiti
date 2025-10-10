@@ -10,7 +10,13 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backup import BACKUP_PREFIX, R2_BUCKET_NAME, perform_backup, get_s3_client
+from backup import (
+    BACKUP_PREFIX,
+    R2_BUCKET_NAME,
+    get_s3_client,
+    perform_backup,
+    perform_restore,
+)
 from config_manager import (
     apply_cron_schedule,
     ensure_config,
@@ -29,6 +35,15 @@ class BackupSettingsModel(BaseModel):
     lastStatus: str
     lastBackupId: Optional[str] = None
     lastError: Optional[str] = None
+    restoreStartedAt: Optional[str] = None
+    restoreCompletedAt: Optional[str] = None
+    lastRestoreStatus: str
+    lastRestoreId: Optional[str] = None
+    lastRestoreError: Optional[str] = None
+    restoreStatementsApplied: Optional[int] = None
+    restoreTotalStatements: Optional[int] = None
+    restorePhase: str
+    restoreProgress: int
 
 
 class BackupSettingsUpdate(BaseModel):
@@ -46,6 +61,26 @@ class BackupTriggerResponse(BaseModel):
     status: str
 
 
+class RestoreTriggerResponse(BaseModel):
+    backup_id: str
+    job_id: str
+    status: str
+
+
+class RestoreStatusModel(BaseModel):
+    running: bool
+    job_id: Optional[str]
+    lastRestoreStatus: str
+    restoreStartedAt: Optional[str] = None
+    restoreCompletedAt: Optional[str] = None
+    lastRestoreId: Optional[str] = None
+    lastRestoreError: Optional[str] = None
+    restoreStatementsApplied: Optional[int] = None
+    restoreTotalStatements: Optional[int] = None
+    restorePhase: str
+    restoreProgress: int
+
+
 class BackupHistoryEntry(BaseModel):
     id: str
     status: str
@@ -54,12 +89,29 @@ class BackupHistoryEntry(BaseModel):
     size_bytes: Optional[int] = None
     download_url: Optional[str] = None
     details: Optional[str] = None
+    node_count: Optional[int] = None
+    relationship_count: Optional[int] = None
+    labels: Optional[List[str]] = None
+    relationship_types: Optional[List[str]] = None
 
 
 def _coalesce_bucket() -> str:
     if not R2_BUCKET_NAME:
         raise HTTPException(status_code=400, detail='R2 bucket is not configured')
     return R2_BUCKET_NAME
+
+
+def _safe_int(value: Optional[str]) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_pipe_separated(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    return [item for item in value.split('|') if item]
 
 
 class BackupTaskController:
@@ -88,7 +140,7 @@ class BackupTaskController:
             self._thread = thread
             self._job_id = job_id
             thread.start()
-            return job_id
+        return job_id
 
     def _run_backup(self, job_id: str, description: Optional[str]) -> None:
         started_at = datetime.now().isoformat()
@@ -117,6 +169,74 @@ class BackupTaskController:
 
 
 controller = BackupTaskController()
+class RestoreTaskController:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._job_id: Optional[str] = None
+
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def current_job_id(self) -> Optional[str]:
+        return self._job_id if self.is_running() else None
+
+    def trigger(self, backup_key: str) -> str:
+        with self._lock:
+            if self.is_running():
+                raise RuntimeError('Restore already in progress')
+
+            job_id = f'restore-{int(time.time())}'
+            thread = threading.Thread(
+                target=self._run_restore,
+                args=(job_id, backup_key),
+                daemon=True,
+            )
+            self._thread = thread
+            self._job_id = job_id
+            thread.start()
+            return job_id
+
+    def _run_restore(self, job_id: str, backup_key: str) -> None:
+        update_runtime_state(
+            lastRestoreStatus='running',
+            restoreStartedAt=datetime.now().isoformat(),
+            restoreCompletedAt=None,
+            lastRestoreId=backup_key,
+            lastRestoreError=None,
+            restoreStatementsApplied=None,
+            restoreTotalStatements=None,
+            restorePhase='downloading',
+            restoreProgress=0,
+        )
+
+        result = perform_restore(backup_key)
+        completed_at = (result.completed_at or datetime.now()).isoformat()
+
+        if result.success:
+            update_runtime_state(
+                lastRestoreStatus='completed',
+                restoreCompletedAt=completed_at,
+                restoreStatementsApplied=result.statements_applied,
+                restorePhase='completed',
+                restoreProgress=result.statements_applied or 0,
+            )
+        else:
+            update_runtime_state(
+                lastRestoreStatus='failed',
+                restoreCompletedAt=completed_at,
+                lastRestoreError=result.error,
+                restoreStatementsApplied=result.statements_applied,
+                restorePhase='failed',
+                restoreProgress=result.statements_applied or 0,
+            )
+
+        with self._lock:
+            self._thread = None
+            self._job_id = None
+
+
+restore_controller = RestoreTaskController()
 app = FastAPI(title='Neo4j Backup Service')
 
 
@@ -153,6 +273,19 @@ async def trigger_backup(request: ManualBackupRequest) -> BackupTriggerResponse:
     return BackupTriggerResponse(backup_id=job_id, status='running')
 
 
+@app.post('/api/backups/{backup_id:path}/restore', response_model=RestoreTriggerResponse)
+async def trigger_restore(backup_id: str) -> RestoreTriggerResponse:
+    if controller.is_running():
+        raise HTTPException(status_code=409, detail='Backup in progress, cannot restore simultaneously')
+
+    try:
+        job_id = restore_controller.trigger(backup_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return RestoreTriggerResponse(backup_id=backup_id, job_id=job_id, status='running')
+
+
 @app.get('/api/backups', response_model=List[BackupHistoryEntry])
 async def list_backups() -> List[BackupHistoryEntry]:
     bucket = _coalesce_bucket()
@@ -176,8 +309,23 @@ async def list_backups() -> List[BackupHistoryEntry]:
         key = obj['Key']
         if key.endswith('/'):
             continue
+
         last_modified = obj['LastModified']
         timestamp = last_modified.astimezone().isoformat() if last_modified else datetime.now().isoformat()
+
+        metadata: dict[str, str] = {}
+        try:
+            head = s3.head_object(Bucket=bucket, Key=key)
+            metadata = head.get('Metadata', {}) or {}
+        except ClientError as exc:  # pragma: no cover - best effort metadata fetch
+            error_code = exc.response.get('Error', {}).get('Code') if hasattr(exc, 'response') else None
+            log(f"Failed to fetch metadata for {key}: {error_code or exc}", 'WARN')
+
+        node_count = _safe_int(metadata.get('meta-nodes'))
+        relationship_count = _safe_int(metadata.get('meta-relationships'))
+        labels = _parse_pipe_separated(metadata.get('meta-labels'))
+        relationship_types = _parse_pipe_separated(metadata.get('meta-rel-types'))
+
         history.append(
             BackupHistoryEntry(
                 id=key,
@@ -186,6 +334,10 @@ async def list_backups() -> List[BackupHistoryEntry]:
                 completed_at=timestamp,
                 size_bytes=obj.get('Size'),
                 download_url=key.split('/')[-1],
+                node_count=node_count,
+                relationship_count=relationship_count,
+                labels=labels or None,
+                relationship_types=relationship_types or None,
             )
         )
 
@@ -193,7 +345,25 @@ async def list_backups() -> List[BackupHistoryEntry]:
     return history
 
 
-@app.get('/api/backups/{backup_id}/download')
+@app.get('/api/restore/status', response_model=RestoreStatusModel)
+async def restore_status() -> RestoreStatusModel:
+    settings = load_settings()
+    return RestoreStatusModel(
+        running=restore_controller.is_running(),
+        job_id=restore_controller.current_job_id(),
+        lastRestoreStatus=settings.get('lastRestoreStatus', 'idle'),
+        restoreStartedAt=settings.get('restoreStartedAt'),
+        restoreCompletedAt=settings.get('restoreCompletedAt'),
+        lastRestoreId=settings.get('lastRestoreId'),
+        lastRestoreError=settings.get('lastRestoreError'),
+        restoreStatementsApplied=settings.get('restoreStatementsApplied'),
+        restoreTotalStatements=settings.get('restoreTotalStatements'),
+        restorePhase=settings.get('restorePhase', 'idle'),
+        restoreProgress=settings.get('restoreProgress', 0),
+    )
+
+
+@app.get('/api/backups/{backup_id:path}/download')
 async def download_backup(backup_id: str) -> StreamingResponse:
     bucket = _coalesce_bucket()
     s3 = get_s3_client()
@@ -214,7 +384,7 @@ async def download_backup(backup_id: str) -> StreamingResponse:
     )
 
 
-@app.delete('/api/backups/{backup_id}', status_code=204)
+@app.delete('/api/backups/{backup_id:path}', status_code=204)
 async def delete_backup(backup_id: str) -> Response:
     bucket = _coalesce_bucket()
     s3 = get_s3_client()
@@ -235,5 +405,7 @@ async def service_status() -> dict:
     return {
         'running': controller.is_running(),
         'job_id': controller.current_job_id(),
+        'restore_running': restore_controller.is_running(),
+        'restore_job_id': restore_controller.current_job_id(),
         'settings': settings,
     }

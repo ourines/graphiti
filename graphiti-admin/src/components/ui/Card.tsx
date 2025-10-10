@@ -14,12 +14,16 @@ const Card = ({ title, description, actions, className, children, ...props }: Ca
       {...props}
     >
       {(title || description || actions) && (
-        <header className="mb-4 flex items-start justify-between gap-3">
-          <div>
+        <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
             {title && <h2 className="text-lg font-semibold text-slate-100">{title}</h2>}
             {description && <p className="text-sm text-muted-foreground">{description}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && (
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {actions}
+            </div>
+          )}
         </header>
       )}
       <div className="space-y-4 text-sm text-slate-200">{children}</div>

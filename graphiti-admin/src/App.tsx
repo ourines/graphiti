@@ -6,6 +6,7 @@ import Dashboard from '@/pages/Dashboard'
 import BackupManagement from '@/pages/BackupManagement'
 import GraphView from '@/pages/GraphView'
 import Settings from '@/pages/Settings'
+import RestoreTimeline from '@/pages/RestoreTimeline'
 
 const App = () => {
   return (
@@ -15,6 +16,7 @@ const App = () => {
           <Route index element={<Dashboard />} />
           <Route path="graph" element={<GraphView />} />
           <Route path="backups" element={<BackupManagement />} />
+          <Route path="restore" element={<RestoreTimeline />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

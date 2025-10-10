@@ -91,6 +91,12 @@ export interface BackupSettingsPayload {
   lastStatus?: string | null
   lastBackupId?: string | null
   lastError?: string | null
+  restoreStartedAt?: string | null
+  restoreCompletedAt?: string | null
+  lastRestoreStatus?: string | null
+  lastRestoreId?: string | null
+  lastRestoreError?: string | null
+  restoreStatementsApplied?: number | null
 }
 
 export interface BackupHistoryEntry {
@@ -101,6 +107,10 @@ export interface BackupHistoryEntry {
   size_bytes: number | null
   download_url?: string | null
   details?: string | null
+  node_count?: number | null
+  relationship_count?: number | null
+  labels?: string[] | null
+  relationship_types?: string[] | null
 }
 
 export interface ManualBackupRequest {
@@ -115,5 +125,27 @@ export interface BackupTriggerResponse {
 export interface BackupServiceStatus {
   running: boolean
   job_id?: string | null
+  restore_running?: boolean
+  restore_job_id?: string | null
   settings: BackupSettingsPayload
+}
+
+export interface RestoreTriggerResponse {
+  backup_id: string
+  job_id: string
+  status: string
+}
+
+export interface RestoreStatusPayload {
+  running: boolean
+  job_id?: string | null
+  lastRestoreStatus: 'idle' | 'running' | 'completed' | 'failed'
+  restoreStartedAt?: string | null
+  restoreCompletedAt?: string | null
+  lastRestoreId?: string | null
+  lastRestoreError?: string | null
+  restoreStatementsApplied?: number | null
+  restoreTotalStatements?: number | null
+  restorePhase?: 'idle' | 'downloading' | 'clearing' | 'replaying' | 'completed' | 'failed'
+  restoreProgress?: number
 }

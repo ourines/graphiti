@@ -8,9 +8,12 @@ import NodeDetails from '@/components/graph/NodeDetails'
 import { useGraphEntities, useGraphGroups, useGraphStats, useSearchFacts, useEntityRelationships } from '@/hooks/useGraph'
 import useDebounce from '@/hooks/useDebounce'
 import { useGraphStore } from '@/store/graphStore'
-import type { GraphSelectedNode } from '@/store/graphStore'
+import type { GraphSelectedNode, GraphViewPreset } from '@/store/graphStore'
 import { entitiesToGraphPayload, factsToGraphPayload } from '@/utils/graphUtils'
 import { fetchEntityRelationships } from '@/api/graphiti'
+import Card from '@/components/ui/Card'
+import Input from '@/components/ui/Input'
+import Button from '@/components/ui/Button'
 
 const GraphView = () => {
   const { data: groupsData, isLoading: groupsLoading } = useGraphGroups()
@@ -24,10 +27,14 @@ const GraphView = () => {
     selectedNode,
     setSelectedNode,
   } = useGraphStore()
+  const presets = useGraphStore((state) => state.presets)
+  const addPreset = useGraphStore((state) => state.addPreset)
+  const removePreset = useGraphStore((state) => state.removePreset)
   const [refreshToken, setRefreshToken] = useState(0)
   const [aggregatedFacts, setAggregatedFacts] = useState<FactResult[]>([])
   const [isAggregating, setIsAggregating] = useState(false)
   const [entitySampleSize, setEntitySampleSize] = useState(20)
+  const [presetName, setPresetName] = useState('')
 
   const debouncedSearch = useDebounce(searchQuery, 400)
 
@@ -43,6 +50,44 @@ const GraphView = () => {
   const maxEntities = entitiesData?.entities?.length ?? 0
   const sampleStep = 20
   const minSampleSize = maxEntities > 0 ? Math.min(sampleStep, maxEntities) : sampleStep
+
+  const activePresetId = useMemo(() => {
+    if (!presets.length) return null
+    const target = presets.find(
+      (preset) =>
+        preset.groupId === (selectedGroupId ?? null) &&
+        preset.searchQuery === searchQuery &&
+        (preset.minPriority ?? null) === (minPriority ?? null) &&
+        preset.sampleSize === entitySampleSize,
+    )
+    return target?.id ?? null
+  }, [presets, selectedGroupId, searchQuery, minPriority, entitySampleSize])
+
+  const handleSavePreset = () => {
+    const name = presetName.trim()
+    if (!name) return
+    addPreset({
+      name,
+      groupId: selectedGroupId,
+      searchQuery,
+      minPriority,
+      sampleSize: entitySampleSize,
+    })
+    setPresetName('')
+  }
+
+  const handleApplyPreset = (preset: GraphViewPreset) => {
+    setSelectedGroupId(preset.groupId)
+    setSearchQuery(preset.searchQuery)
+    setMinPriority(preset.minPriority)
+    setEntitySampleSize(preset.sampleSize)
+    setRefreshToken((value) => value + 1)
+    setSelectedNode(null)
+  }
+
+  const handleRemovePreset = (id: string) => {
+    removePreset(id)
+  }
 
   useEffect(() => {
     if (maxEntities > 0) {
@@ -218,6 +263,16 @@ const GraphView = () => {
           onDecreaseSample={() => setEntitySampleSize((value) => Math.max(minSampleSize, value - sampleStep))}
         />
 
+        <GraphPresetManager
+          presets={presets}
+          activePresetId={activePresetId}
+          presetName={presetName}
+          onPresetNameChange={setPresetName}
+          onSavePreset={handleSavePreset}
+          onApplyPreset={handleApplyPreset}
+          onRemovePreset={handleRemovePreset}
+        />
+
         <GraphVisualization
           payload={graphPayload}
           isLoading={isLoadingGraph}
@@ -235,6 +290,95 @@ const GraphView = () => {
         onClose={resetSelection}
       />
     </div>
+  )
+}
+
+const GraphPresetManager = ({
+  presets,
+  activePresetId,
+  presetName,
+  onPresetNameChange,
+  onSavePreset,
+  onApplyPreset,
+  onRemovePreset,
+}: {
+  presets: GraphViewPreset[]
+  activePresetId: string | null
+  presetName: string
+  onPresetNameChange: (value: string) => void
+  onSavePreset: () => void
+  onApplyPreset: (preset: GraphViewPreset) => void
+  onRemovePreset: (id: string) => void
+}) => {
+  const hasPresets = presets.length > 0
+
+  return (
+    <Card
+      title="保存视角"
+      description="记录当前筛选和采样配置，快速切换调试场景"
+    >
+      <div className="space-y-3 text-sm">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            value={presetName}
+            onChange={(event) => onPresetNameChange(event.target.value)}
+            placeholder="命名当前视角（例如：高优节点）"
+            className="sm:flex-1"
+          />
+          <Button onClick={onSavePreset} disabled={!presetName.trim()}>
+            保存视角
+          </Button>
+        </div>
+
+        {hasPresets ? (
+          <div className="space-y-2">
+            {presets
+              .slice()
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .map((preset) => {
+                const isActive = preset.id === activePresetId
+                return (
+                  <div
+                    key={preset.id}
+                    className={`flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between ${
+                      isActive ? 'border-accent/40 bg-accent/10' : 'border-slate-800 bg-background/50'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium text-slate-100">{preset.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        组：{preset.groupId ?? '全部'} · 搜索：{preset.searchQuery || '—'} · 优先级：
+                        {preset.minPriority ?? '全部'} · 样本：{preset.sampleSize}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant={isActive ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => onApplyPreset(preset)}
+                      >
+                        {isActive ? '使用中' : '应用'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-rose-300 hover:text-rose-200"
+                        onClick={() => onRemovePreset(preset.id)}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            还没有保存的视角。设置好群组、搜索条件后输入名称保存，稍后可以一键恢复。
+          </p>
+        )}
+      </div>
+    </Card>
   )
 }
 

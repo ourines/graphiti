@@ -6,7 +6,9 @@ import {
   getBackupHistory,
   getBackupSettings,
   getBackupStatus,
+  getRestoreStatus,
   triggerManualBackup,
+  triggerRestore,
   updateBackupSettings,
 } from '@/api/backup'
 import type { BackupHistoryEntry, BackupSettingsPayload, ManualBackupRequest } from '@/api/types'
@@ -80,3 +82,21 @@ export const useBackupStatus = () =>
     queryFn: getBackupStatus,
     refetchInterval: 1000 * 15,
   })
+
+export const useRestoreStatus = () =>
+  useQuery({
+    queryKey: ['backup', 'restore-status'],
+    queryFn: getRestoreStatus,
+    refetchInterval: 1000 * 10,
+  })
+
+export const useTriggerRestore = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (backupId: string) => triggerRestore(backupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backup', 'restore-status'] })
+    },
+  })
+}

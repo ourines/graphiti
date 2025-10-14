@@ -382,43 +382,43 @@ services:
 
 ### Phase 1: 项目初始化 (1-2 小时)
 - [x] 创建新分支 `feature/graphiti-admin-ui`
-- [ ] 使用 Vite 创建 React + TypeScript 项目
-- [ ] 安装依赖 (Sigma.js, React Router, TanStack Query, Tailwind)
-- [ ] 设置项目结构
-- [ ] 配置 TypeScript 和 ESLint
+- [x] 使用 Vite 创建 React + TypeScript 项目
+- [x] 安装依赖 (Sigma.js, React Router, TanStack Query, Tailwind)
+- [x] 设置项目结构
+- [x] 配置 TypeScript 和 ESLint
 
 ### Phase 2: API 客户端 (2-3 小时)
-- [ ] 实现 GraphiTi API 客户端
-- [ ] 实现备份 API 客户端（需要先添加备份 API）
-- [ ] 设置 React Query
-- [ ] 定义类型接口
+- [x] 实现 GraphiTi API 客户端
+- [x] 实现备份 API 客户端（需要先添加备份 API）
+- [x] 设置 React Query
+- [x] 定义类型接口
 
 ### Phase 3: 基础布局 (2 小时)
-- [ ] 创建 Layout 组件
-- [ ] 创建 Sidebar 导航
-- [ ] 创建 Header
-- [ ] 设置路由
+- [x] 创建 Layout 组件
+- [x] 创建 Sidebar 导航
+- [x] 创建 Header
+- [x] 设置路由
 
 ### Phase 4: 图谱可视化 (4-6 小时)
-- [ ] 实现基础 Sigma.js 集成
-- [ ] 从 API 加载数据
-- [ ] 实现节点/边样式
-- [ ] 添加交互功能（点击、搜索）
+- [x] 实现基础 Sigma.js 集成
+- [x] 从 API 加载数据
+- [x] 实现节点/边样式
+- [x] 添加交互功能（点击、搜索）
 - [ ] 实现性能优化
   - [ ] 虚拟化加载
   - [ ] 分页
-  - [ ] 缓存
+  - [x] 缓存
 
 ### Phase 5: 备份管理 (3-4 小时)
-- [ ] 添加备份 API server 到 neo4j-backup
-- [ ] 实现备份设置界面
-- [ ] 实现备份历史列表
-- [ ] 手动备份功能
-- [ ] 下载备份功能
+- [x] 添加备份 API server 到 neo4j-backup
+- [x] 实现备份设置界面
+- [x] 实现备份历史列表
+- [x] 手动备份功能
+- [x] 下载备份功能
 
 ### Phase 6: Docker 集成 (1-2 小时)
-- [ ] 创建 Dockerfile
-- [ ] 更新 docker-compose.yml
+- [x] 创建 Dockerfile
+- [x] 更新 docker-compose.yml
 - [ ] 测试容器化部署
 
 ### Phase 7: 测试和优化 (2-3 小时)
@@ -483,7 +483,6 @@ services:
 
 ## 下一步行动
 
-1. 创建 `graphiti-admin` 目录
-2. 初始化 Vite + React + TypeScript 项目
-3. 安装核心依赖
-4. 开始 Phase 1 实施
+1. 完成图谱性能优化（虚拟化、分页方案）
+2. 覆盖关键交互的功能测试并补充文档
+3. 验证容器化部署流程，整理部署说明

@@ -49,8 +49,10 @@ const GraphInternal = ({
   useEffect(() => {
     if (graphologyGraph) {
       loadGraph(graphologyGraph)
+      sigma.refresh()
     } else {
       sigma.getGraph().clear()
+      sigma.refresh()
     }
   }, [graphologyGraph, loadGraph, sigma])
 

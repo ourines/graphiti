@@ -24,7 +24,7 @@ const Sidebar = () => {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-800 bg-surface/90 p-4 backdrop-blur transition-transform duration-200 lg:static lg:z-0 lg:flex lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col overflow-y-auto border-r border-slate-800 bg-surface/90 p-4 backdrop-blur transition-transform duration-200 lg:z-30 lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >

@@ -8,6 +8,8 @@ import os
 import sys
 import gzip
 import shutil
+import tarfile
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -499,7 +501,10 @@ def perform_backup() -> BackupResult:
 
 
 def _sanitize_backup_key(backup_key: str) -> str:
+    # Prevent directory traversal and ensure we create files within /backups only.
     safe = backup_key.replace('..', '_')
+    safe = safe.replace('/', '_').replace('\\', '_')
+    safe = re.sub(r'[^A-Za-z0-9._-]', '_', safe)
     return safe
 
 
@@ -604,6 +609,32 @@ def perform_restore(backup_key: str) -> RestoreResult:
             cypher_file = decompressed
             if local_download.exists():
                 local_download.unlink()
+
+        if tarfile.is_tarfile(cypher_file):
+            log('Detected tar archive backup, searching for Cypher export...')
+            with tarfile.open(cypher_file, 'r:*') as archive:
+                members = [m for m in archive.getmembers() if m.isfile()]
+                target_member = None
+                for member in members:
+                    name = Path(member.name)
+                    if name.suffix.lower() in {'.cypher', '.cql'}:
+                        target_member = member
+                        break
+
+                if not target_member:
+                    raise ValueError(
+                        'Archive backup does not contain a Cypher export. '
+                        'Full datastore restores are not supported by the automated workflow.'
+                    )
+
+                extracted_path = tmp_dir / Path(target_member.name).name
+                with archive.extractfile(target_member) as src, extracted_path.open('wb') as dst:
+                    shutil.copyfileobj(src, dst)
+
+            if cypher_file.exists():
+                cypher_file.unlink()
+
+            cypher_file = extracted_path
 
         from neo4j import GraphDatabase
 

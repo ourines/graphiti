@@ -73,8 +73,28 @@ echo "[INFO] ============================================================"
 # Start cron in background
 crond
 
-echo "[INFO] Launching Backup API (port 8080)"
-uvicorn api:app --host 0.0.0.0 --port 8080 --log-level info &
+echo "[INFO] Determining network stack for Backup API"
+UVICORN_HOST="0.0.0.0"
+if python3 - <<'PY'
+import socket
+
+try:
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    sock.bind(("::", 0))
+except OSError:
+    raise SystemExit(1)
+else:
+    sock.close()
+PY
+then
+    UVICORN_HOST="::"
+    echo "[INFO] IPv6 detected; binding uvicorn to '::' (dual-stack)"
+else
+    echo "[INFO] IPv6 not available; falling back to IPv4 binding"
+fi
+
+echo "[INFO] Launching Backup API on ${UVICORN_HOST}:8080"
+uvicorn api:app --host "${UVICORN_HOST}" --port 8080 --log-level info &
 UVICORN_PID=$!
 
 trap 'echo "[INFO] Shutting down..."; kill -TERM $UVICORN_PID 2>/dev/null || true; exit 0' SIGTERM SIGINT

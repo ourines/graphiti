@@ -5,12 +5,14 @@ import Sidebar from './Sidebar'
 
 const Layout = () => {
   return (
-    <div className="flex h-full min-h-screen bg-background text-slate-100">
+    <div className="relative min-h-screen bg-background text-slate-100">
       <Sidebar />
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-h-screen flex-col lg:ml-64">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

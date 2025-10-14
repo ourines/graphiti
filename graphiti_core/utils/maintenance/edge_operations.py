@@ -139,6 +139,8 @@ async def extract_edges(
             prompt_library.extract_edges.edge(context),
             response_model=ExtractedEdges,
             max_tokens=extract_edges_max_tokens,
+            group_id=group_id,
+            prompt_name='extract_edges.edge',
         )
         edges_data = ExtractedEdges(**llm_response).edges
 
@@ -150,6 +152,8 @@ async def extract_edges(
                 prompt_library.extract_edges.reflexion(context),
                 response_model=MissingFacts,
                 max_tokens=extract_edges_max_tokens,
+                group_id=group_id,
+                prompt_name='extract_edges.reflexion',
             )
 
             missing_facts = reflexion_response.get('missing_facts', [])
@@ -176,6 +180,10 @@ async def extract_edges(
         invalid_at = edge_data.invalid_at
         valid_at_datetime = None
         invalid_at_datetime = None
+
+        # Filter out empty edges
+        if not edge_data.fact.strip():
+            continue
 
         source_node_idx = edge_data.source_entity_id
         target_node_idx = edge_data.target_entity_id
@@ -405,21 +413,26 @@ def resolve_edge_contradictions(
     invalidated_edges: list[EntityEdge] = []
     for edge in invalidation_candidates:
         # (Edge invalid before new edge becomes valid) or (new edge invalid before edge becomes valid)
+        edge_invalid_at_utc = ensure_utc(edge.invalid_at)
+        resolved_edge_valid_at_utc = ensure_utc(resolved_edge.valid_at)
+        edge_valid_at_utc = ensure_utc(edge.valid_at)
+        resolved_edge_invalid_at_utc = ensure_utc(resolved_edge.invalid_at)
+
         if (
-            edge.invalid_at is not None
-            and resolved_edge.valid_at is not None
-            and edge.invalid_at <= resolved_edge.valid_at
+            edge_invalid_at_utc is not None
+            and resolved_edge_valid_at_utc is not None
+            and edge_invalid_at_utc <= resolved_edge_valid_at_utc
         ) or (
-            edge.valid_at is not None
-            and resolved_edge.invalid_at is not None
-            and resolved_edge.invalid_at <= edge.valid_at
+            edge_valid_at_utc is not None
+            and resolved_edge_invalid_at_utc is not None
+            and resolved_edge_invalid_at_utc <= edge_valid_at_utc
         ):
             continue
         # New edge invalidates edge
         elif (
-            edge.valid_at is not None
-            and resolved_edge.valid_at is not None
-            and edge.valid_at < resolved_edge.valid_at
+            edge_valid_at_utc is not None
+            and resolved_edge_valid_at_utc is not None
+            and edge_valid_at_utc < resolved_edge_valid_at_utc
         ):
             edge.invalid_at = resolved_edge.valid_at
             edge.expired_at = edge.expired_at if edge.expired_at is not None else utc_now()
@@ -520,6 +533,7 @@ async def resolve_extracted_edge(
         prompt_library.dedupe_edges.resolve_edge(context),
         response_model=EdgeDuplicate,
         model_size=ModelSize.small,
+        prompt_name='dedupe_edges.resolve_edge',
     )
     response_object = EdgeDuplicate(**llm_response)
     duplicate_facts = response_object.duplicate_facts
@@ -583,6 +597,7 @@ async def resolve_extracted_edge(
                 prompt_library.extract_edges.extract_attributes(edge_attributes_context),
                 response_model=edge_model,  # type: ignore
                 model_size=ModelSize.small,
+                prompt_name='extract_edges.extract_attributes',
             )
 
             resolved_edge.attributes = edge_attributes_response
@@ -609,14 +624,14 @@ async def resolve_extracted_edge(
 
     # Determine if the new_edge needs to be expired
     if resolved_edge.expired_at is None:
-        invalidation_candidates.sort(key=lambda c: (c.valid_at is None, c.valid_at))
+        invalidation_candidates.sort(key=lambda c: (c.valid_at is None, ensure_utc(c.valid_at)))
         for candidate in invalidation_candidates:
+            candidate_valid_at_utc = ensure_utc(candidate.valid_at)
+            resolved_edge_valid_at_utc = ensure_utc(resolved_edge.valid_at)
             if (
-                candidate.valid_at
-                and resolved_edge.valid_at
-                and candidate.valid_at.tzinfo
-                and resolved_edge.valid_at.tzinfo
-                and candidate.valid_at > resolved_edge.valid_at
+                candidate_valid_at_utc is not None
+                and resolved_edge_valid_at_utc is not None
+                and candidate_valid_at_utc > resolved_edge_valid_at_utc
             ):
                 # Expire new edge since we have information about more recent events
                 resolved_edge.invalid_at = candidate.valid_at

@@ -14,6 +14,7 @@ import randomLayout from 'graphology-layout/random'
 
 import type { GraphPayload } from '@/api/types'
 import { graphPayloadToGraphology } from '@/utils/graphUtils'
+import { useGraphHeight } from '@/hooks/useGraphHeight'
 
 type GraphVisualizationProps = {
   payload: GraphPayload | null
@@ -104,9 +105,10 @@ const GraphInternal = ({
 
 const GraphVisualization = ({ payload, isLoading, onNodeSelect, selectedNodeId }: GraphVisualizationProps) => {
   const hasData = !!payload && payload.nodes.length > 0
+  const graphHeight = useGraphHeight()
 
   return (
-    <div className="relative h-[600px] w-full overflow-hidden rounded-xl border border-slate-800 bg-surface">
+    <div className="relative w-full overflow-hidden rounded-xl border border-slate-800 bg-surface transition-all duration-300" style={{ height: graphHeight }}>
       {!hasData && !isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center text-muted-foreground">
           No graph data available. Adjust filters or run a search.

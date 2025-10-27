@@ -12,30 +12,33 @@ const Header = () => {
   const isAuthenticated = useAuthStore((state) => Boolean(state.authorizationHeader))
 
   return (
-    <header className="flex items-center justify-between border-b border-slate-800 bg-surface/60 px-4 py-4 backdrop-blur md:px-6">
-      <div className="flex items-center gap-3">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 bg-surface/60 px-4 py-4 backdrop-blur md:px-6">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
         <Button
           variant="ghost"
           size="sm"
-          className="lg:hidden"
+          className="lg:hidden shrink-0"
           onClick={toggleSidebar}
           aria-label="Open navigation"
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <div>
-          <h1 className="text-lg font-semibold">GraphiTi Admin</h1>
-          <p className="text-sm text-muted-foreground">Manage graph insights and backups</p>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold truncate">GraphiTi Admin</h1>
+          <p className="text-sm text-muted-foreground hidden sm:block">Manage graph insights and backups</p>
         </div>
       </div>
       {isAuthenticated && (
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span>
+        <div className="flex items-center gap-2 sm:gap-3 text-xs sm:text-sm text-muted-foreground">
+          <span className="hidden sm:inline truncate max-w-[120px] lg:max-w-none">
             {authType === 'basic' ? `Basic · ${username ?? '用户'}` : 'Bearer Token'}
           </span>
-          <Button variant="ghost" size="sm" onClick={clearAuth} className="gap-2 text-slate-200">
+          <span className="sm:hidden truncate max-w-[80px]">
+            {authType === 'basic' ? username ?? '用户' : 'Bearer'}
+          </span>
+          <Button variant="ghost" size="sm" onClick={clearAuth} className="gap-2 text-slate-200 shrink-0">
             <LogOut className="h-4 w-4" />
-            登出
+            <span className="hidden sm:inline">登出</span>
           </Button>
         </div>
       )}

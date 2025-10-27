@@ -69,14 +69,14 @@ const MetricCard = ({ icon: Icon, label, value, helper, tone = 'default' }: Metr
       : 'bg-accent/10 text-accent'
 
   return (
-    <div className="flex items-start gap-4 rounded-xl border border-slate-800 bg-surface/80 p-5 shadow-lg">
-      <span className={`flex h-12 w-12 items-center justify-center rounded-lg ${iconStyles}`}>
-        <Icon className="h-6 w-6" />
+    <div className="flex items-start gap-3 sm:gap-4 rounded-xl border border-slate-800 bg-surface/80 p-4 sm:p-5 shadow-lg transition-all duration-200 hover:shadow-xl hover:border-slate-700">
+      <span className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg flex-shrink-0 ${iconStyles}`}>
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </span>
-      <div className="space-y-1">
+      <div className="space-y-1 min-w-0 flex-1">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold text-slate-100">{value}</p>
-        {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
+        <p className="text-xl sm:text-2xl font-semibold text-slate-100 truncate">{value}</p>
+        {helper && <p className="text-xs text-muted-foreground leading-relaxed">{helper}</p>}
       </div>
     </div>
   )
@@ -213,21 +213,21 @@ const Dashboard = () => {
         </div>
       )}
 
-      <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Overview</h1>
-          <p className="text-sm text-muted-foreground">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-100 truncate">Overview</h1>
+          <p className="text-sm text-muted-foreground leading-relaxed">
             Track graph insights and the health of your backup pipeline at a glance.
           </p>
         </div>
-        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:flex-shrink-0">
           <label className="flex flex-col text-xs uppercase tracking-wide text-muted-foreground">
             Active group
             <select
               value={selectedGroupId ?? ''}
               onChange={(event) => setSelectedGroupId(event.target.value)}
               disabled={groupsLoading || !groupsData?.group_ids?.length}
-              className="mt-1 h-10 min-w-[220px] rounded-lg border border-slate-800 bg-background px-3 text-sm text-slate-100 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 h-10 min-w-[180px] sm:min-w-[220px] rounded-lg border border-slate-800 bg-background px-3 text-sm text-slate-100 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="" disabled>
                 {groupsLoading ? 'Loading…' : 'Select a group'}
@@ -244,21 +244,22 @@ const Dashboard = () => {
             size="sm"
             onClick={refreshAll}
             disabled={isRefreshing}
-            className="gap-2"
+            className="gap-2 whitespace-nowrap"
           >
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh data
+            <span className="hidden sm:inline">Refresh data</span>
+            <span className="sm:hidden">Refresh</span>
           </Button>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {metrics.map((metric) => (
           <MetricCard key={metric.key} {...metric} />
         ))}
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+      <section className="grid gap-6 grid-cols-1 lg:grid-cols-[2fr_1fr] xl:grid-cols-[2.2fr_0.8fr]">
         <div className="space-y-6">
           <GraphStatsPanel stats={stats} isLoading={statsLoading || statsRefreshing} />
 
